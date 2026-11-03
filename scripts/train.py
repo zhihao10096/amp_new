@@ -1,6 +1,7 @@
 """Train Go2 velocity tracking with Isaac Lab and SuperMimic."""
 
 import argparse
+import traceback
 from dataclasses import fields
 
 from isaaclab.app import AppLauncher
@@ -40,9 +41,10 @@ def main():
     env_cfg.scene.num_envs = cfg.num_envs
     env_cfg.sim.device = args.device
     env_cfg.seed = cfg.seed
-    if cfg.resume:
-      ckpt = load_checkpoint(cfg.resume, "cpu")
-      env_cfg.task = task_from_dict(ckpt["task_cfg"])
+    if cfg.resume or cfg.warm_start:
+      ckpt = load_checkpoint(cfg.resume or cfg.warm_start, "cpu")
+      if cfg.resume:
+        env_cfg.task = task_from_dict(ckpt["task_cfg"])
       # A checkpoint's architecture is part of its interface.
       for name in ("actor_hidden", "critic_hidden", "wm_hidden"):
         setattr(cfg, name, tuple(ckpt["cfg"][name]))
@@ -50,6 +52,10 @@ def main():
       env_cfg.robot.spawn.usd_path = cfg.robot_usd
     env = gym.make(cfg.task, cfg=env_cfg).unwrapped
     Trainer(cfg, env).run()
+  except Exception:
+    # Kit shutdown can terminate the process before Python prints the traceback.
+    traceback.print_exc()
+    raise
   finally:
     if env is not None:
       env.close()

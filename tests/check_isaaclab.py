@@ -43,16 +43,20 @@ try:
     previous = env.actions.clone()
     command, time = env.commands.clone(), env.command_time.clone()
     history = obs["policy"].clone()
+    gait = env.gait.clone()
     action = torch.randn(16, 12, device=env.device) * 0.1
     obs, actual, terminated, truncated, extras = env.step(action)
     state = extras["transition"]["next_state"]
     torch.testing.assert_close(extras["transition"]["commands"], command)
     expected, terms = v.reward(before, state, action, previous, command,
-                                env.consts, cfg.task, env.step_dt, terminated)
+                                env.consts, cfg.task, env.step_dt, terminated, gait)
     torch.testing.assert_close(actual, expected)
     independent_tracking = torch.exp(-((state[:, 4:6] - command[:, :2])**2).sum(-1) / 0.25)
     torch.testing.assert_close(terms["track_linear_velocity"], independent_tracking)
     done = terminated | truncated
+    expected_gait, _ = v.advance_gait(gait, before[:, v.CONTACT], state[:, v.CONTACT], env.step_dt)
+    expected_gait[done] = 0
+    torch.testing.assert_close(env.gait, expected_gait)
     # Rebuild the complete next observation as imagination would, including reset.
     history[done] = 0
     expected_obs = v.push_history(history, v.obs_frame(robot_state(env), env.actions, env.commands), 5)

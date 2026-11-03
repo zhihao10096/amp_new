@@ -5,6 +5,7 @@ import torch
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv
+from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_from_euler_xyz
 
 from go2_supermimic import velocity as v
@@ -18,18 +19,26 @@ class Go2VelocityEnv(DirectRLEnv):
   def __init__(self, cfg: Go2VelocityEnvCfg, render_mode=None, **kwargs):
     cfg.observation_space = v.FRAME_DIM * cfg.task.history
     super().__init__(cfg, render_mode, **kwargs)
+    foot_names = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
+    self.foot_body_ids, _ = self.robot.find_bodies(foot_names, preserve_order=True)
+    self.foot_sensor_ids, _ = self.contact_sensor.find_bodies(foot_names, preserve_order=True)
+    self.undesired_sensor_ids, _ = self.contact_sensor.find_bodies(
+      ["Head_.*", ".*_hip", ".*_thigh", ".*_calf"])
     self.consts = robot_consts(self)
     self.actions = torch.zeros(self.num_envs, v.NUM_JOINTS, device=self.device)
     self.previous_actions = torch.zeros_like(self.actions)
     self.commands = torch.zeros(self.num_envs, 3, device=self.device)
     self.command_time = torch.zeros(self.num_envs, device=self.device)
     self.history = torch.zeros(self.num_envs, cfg.observation_space, device=self.device)
+    self.gait = torch.zeros(self.num_envs, v.GAIT_DIM, device=self.device)
     self.previous_state = robot_state(self).clone()
     self.fixed_command = None
 
   def _setup_scene(self):
     self.robot = Articulation(self.cfg.robot)
     self.scene.articulations["robot"] = self.robot
+    self.contact_sensor = ContactSensor(self.cfg.contact_sensor)
+    self.scene.sensors["contact_sensor"] = self.contact_sensor
     ground_cfg = sim_utils.GroundPlaneCfg(
       size=(10000.0, 10000.0), physics_material=self.cfg.sim.physics_material)
     ground_cfg.func("/World/ground", ground_cfg)
@@ -56,7 +65,9 @@ class Go2VelocityEnv(DirectRLEnv):
     state = robot_state(self)
     reward, terms = v.reward(self.previous_state, state, self.actions, self.previous_actions,
                              self.commands, self.consts, self.cfg.task, self.step_dt,
-                             self.reset_terminated)
+                             self.reset_terminated, self.gait)
+    self.gait, _ = v.advance_gait(self.gait, self.previous_state[:, v.CONTACT],
+                                 state[:, v.CONTACT], self.step_dt)
     # DirectRLEnv automatically resets before returning observations. Preserve
     # terminal states here so replay learns falls instead of reset teleports.
     self.extras["transition"] = {
@@ -84,6 +95,7 @@ class Go2VelocityEnv(DirectRLEnv):
     self.actions[env_ids] = 0
     self.previous_actions[env_ids] = 0
     self.history[env_ids] = 0
+    self.gait[env_ids] = 0
     commands, remaining = v.sample_commands(len(env_ids), self.device, self.cfg.task.commands)
     self.commands[env_ids] = commands if self.fixed_command is None else self.fixed_command[env_ids]
     self.command_time[env_ids] = remaining

@@ -8,17 +8,28 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import torch
 
 NUM_JOINTS = 12
-STATE_DIM = 34
+BASE_STATE_DIM = 34
+STATE_DIM = 63
+GAIT_DIM = 16
 Z = slice(0, 1)
 GRAV = slice(1, 4)
 V_B = slice(4, 7)
 W_B = slice(7, 10)
 Q = slice(10, 22)
 QD = slice(22, 34)
+FOOT_POS = slice(34, 46)  # body-frame foot positions relative to the root
+FOOT_VEL = slice(46, 58)  # absolute foot velocity, rotated into body frame
+CONTACT = slice(58, 62)   # FL, FR, RL, RR; binary in PhysX, soft in imagination
+UNDESIRED_CONTACT = slice(62, 63)
+AIR = slice(0, 4)
+STANCE = slice(4, 8)
+LAST_AIR = slice(8, 12)
+LAST_STANCE = slice(12, 16)
 OBS_TERMS = (("angular_velocity", 3), ("gravity", 3), ("command", 3),
              ("joint_position", 12), ("joint_velocity", 12), ("action", 12))
 FRAME_DIM = sum(dim for _, dim in OBS_TERMS)
@@ -47,18 +58,29 @@ class RewardWeights:
   track_yaw_rate: float = 0.75
   vertical_velocity: float = -2.0
   roll_pitch_rate: float = -0.05
-  orientation: float = -1.0
-  base_height: float = -10.0
-  joint_deviation: float = -0.05
-  action_rate: float = -0.01
-  joint_torque: float = -2e-5
+  orientation: float = -2.5
+  base_height: float = 0.0
+  joint_deviation: float = -0.7
+  action_rate: float = -0.1
+  joint_torque: float = -2e-4
+  joint_velocity: float = -0.001
+  energy: float = -2e-5
   joint_acceleration: float = -2.5e-7
-  joint_limits: float = -1.0
+  joint_limits: float = -10.0
+  feet_air_time: float = 0.1
+  air_time_variance: float = -1.0
+  feet_slide: float = -0.3
+  undesired_contacts: float = -1.0
+  feet_clearance: float = 0.5
+  feet_contact_without_command: float = 0.5
+  gait_duration: float = -8.0
+  diagonal_gait: float = 0.3
   terminated: float = -10.0
 
 
 @dataclass
 class VelocityTaskCfg:
+  reward_profile: str = "unitree_gait"
   history: int = 5
   action_scale: float = 0.25
   action_clip: float = 4.0
@@ -67,6 +89,13 @@ class VelocityTaskCfg:
   minimum_height: float = 0.16
   fall_angle_deg: float = 60.0
   tracking_variance: float = 0.25
+  air_time_threshold: float = 0.5
+  stand_still_scale: float = 5.0
+  stand_velocity_threshold: float = 0.3
+  swing_height: float = 0.06  # foot body centre, including 0.022 m foot radius
+  clearance_variance: float = 0.01
+  target_air_time: float = 0.18
+  target_stance_time: float = 0.18
   commands: CommandCfg = field(default_factory=CommandCfg)
   rewards: RewardWeights = field(default_factory=RewardWeights)
 
@@ -81,8 +110,16 @@ class RobotConsts:
   velocity: torch.Tensor
 
 
+@lru_cache(maxsize=32)
+def _command_bounds(device: str, ranges: tuple) -> torch.Tensor:
+  # Imagination invokes this each step. Recreating a CUDA tensor from Python
+  # values would otherwise force a host/device copy in every imagined step.
+  return torch.tensor(ranges, device=device)
+
+
 def sample_commands(n: int, device, cfg: CommandCfg) -> tuple[torch.Tensor, torch.Tensor]:
-  bounds = torch.tensor([cfg.lin_vel_x, cfg.lin_vel_y, cfg.ang_vel_z], device=device)
+  ranges = tuple(tuple(pair) for pair in (cfg.lin_vel_x, cfg.lin_vel_y, cfg.ang_vel_z))
+  bounds = _command_bounds(str(device), ranges)
   commands = bounds[:, 0] + torch.rand(n, 3, device=device) * (bounds[:, 1] - bounds[:, 0])
   commands[torch.rand(n, device=device) < cfg.standing_fraction] = 0
   lo, hi = cfg.resampling_time
@@ -142,9 +179,34 @@ def motor_torque(s: torch.Tensor, action: torch.Tensor, c: RobotConsts,
   return torch.maximum(torch.minimum(torque, upper), lower)
 
 
+def advance_gait(gait: torch.Tensor, contact0: torch.Tensor, contact1: torch.Tensor,
+                 dt: float) -> tuple[torch.Tensor, torch.Tensor]:
+  """Contact-event timers shared by PhysX and differentiable imagination.
+
+  Binary contacts implement exact control-step timers. Predicted contacts use
+  the continuous relaxation of the same update so rewards retain gradients.
+  """
+  c0, c1 = contact0.clamp(0, 1), contact1.clamp(0, 1)
+  # Smoothstep suppresses low-probability "leaks" that would otherwise reset
+  # an imagined swing timer every step. Binary real contacts stay unchanged.
+  c0, c1 = c0.square() * (3 - 2 * c0), c1.square() * (3 - 2 * c1)
+  touchdown, liftoff = (1 - c0) * c1, c0 * (1 - c1)
+  air, stance = gait[:, AIR] + dt, gait[:, STANCE] + dt
+  last_air = torch.lerp(gait[:, LAST_AIR], air, touchdown)
+  last_stance = torch.lerp(gait[:, LAST_STANCE], stance, liftoff)
+  return torch.cat([air * (1 - c1), stance * c1, last_air, last_stance], -1), touchdown
+
+
 def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
-           cfg: VelocityTaskCfg, dt: float, done: torch.Tensor):
+           cfg: VelocityTaskCfg, dt: float, done: torch.Tensor, gait=None):
   q = s1[:, Q] + c.default_q
+  torque = motor_torque(s1, action, c, cfg)
+  if cfg.reward_profile == "legacy":
+    deviation = s1[:, Q].square().sum(-1)
+  else:
+    moving = ((commands.norm(dim=-1) > 0)
+              | (s1[:, V_B][:, :2].norm(dim=-1) > cfg.stand_velocity_threshold))
+    deviation = s1[:, Q].norm(dim=-1) * torch.where(moving, 1.0, cfg.stand_still_scale)
   terms = {
     "track_linear_velocity": torch.exp(
       -(s1[:, V_B][:, :2] - commands[:, :2]).square().sum(-1) / cfg.tracking_variance),
@@ -153,12 +215,46 @@ def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
     "roll_pitch_rate": s1[:, W_B][:, :2].square().sum(-1),
     "orientation": s1[:, GRAV][:, :2].square().sum(-1),
     "base_height": (s1[:, 0] - cfg.nominal_height).square(),
-    "joint_deviation": s1[:, Q].square().sum(-1),
+    "joint_deviation": deviation,
     "action_rate": (action - previous_action).square().sum(-1),
-    "joint_torque": motor_torque(s1, action, c, cfg).square().sum(-1),
+    "joint_torque": torque.square().sum(-1),
+    "joint_velocity": s1[:, QD].square().sum(-1),
+    "energy": (torque * s1[:, QD]).abs().sum(-1),
     "joint_acceleration": ((s1[:, QD] - s0[:, QD]) / dt).square().sum(-1),
     "joint_limits": ((c.soft_limits[..., 0] - q).clamp(min=0)
                      + (q - c.soft_limits[..., 1]).clamp(min=0)).sum(-1),
     "terminated": done.float(),
   }
+  if gait is not None:
+    following, touchdown = advance_gait(gait, s0[:, CONTACT], s1[:, CONTACT], dt)
+    foot_vel = s1[:, FOOT_VEL].reshape(-1, 4, 3)
+    # Remove the world-vertical component using gravity in body coordinates.
+    gravity = s1[:, GRAV].unsqueeze(1)
+    horizontal = foot_vel - (foot_vel * gravity).sum(-1, keepdim=True) * gravity
+    contact = s1[:, CONTACT].clamp(0, 1)
+    moving = commands.norm(dim=-1) > 0.1
+    foot_pos = s1[:, FOOT_POS].reshape(-1, 4, 3)
+    height = s1[:, Z] - (foot_pos * gravity).sum(-1)
+    clearance_cost = ((height - cfg.swing_height).square()
+                      * torch.tanh(2 * horizontal.norm(dim=-1))).sum(-1)
+    duration_cost = ((following[:, LAST_AIR].clamp(max=0.5) - cfg.target_air_time).square()
+                     + (following[:, LAST_STANCE].clamp(max=0.5)
+                        - cfg.target_stance_time).square()).sum(-1)
+    # A phase-free version of the reference contact gait reward: diagonal
+    # feet move together and the two front feet alternate.
+    same = lambda a, b: a * b + (1 - a) * (1 - b)
+    diagonal = (same(contact[:, 0], contact[:, 3]) + same(contact[:, 1], contact[:, 2])) / 2
+    opposite = 1 - same(contact[:, 0], contact[:, 1])
+    terms.update({
+      "feet_air_time": ((following[:, LAST_AIR] - cfg.air_time_threshold) * touchdown).sum(-1)
+                       * (commands[:, :2].norm(dim=-1) > 0.1),
+      "air_time_variance": (following[:, LAST_AIR].clamp(max=0.5).var(dim=-1)
+                            + following[:, LAST_STANCE].clamp(max=0.5).var(dim=-1)),
+      "feet_slide": (horizontal.norm(dim=-1) * contact).sum(-1),
+      "undesired_contacts": s1[:, UNDESIRED_CONTACT].squeeze(-1).clamp(min=0),
+      "feet_clearance": torch.exp(-clearance_cost / cfg.clearance_variance) * moving,
+      "feet_contact_without_command": contact.sum(-1) * ~moving,
+      "gait_duration": duration_cost * moving,
+      "diagonal_gait": .5 * (diagonal + opposite) * moving,
+    })
   return sum(getattr(cfg.rewards, name) * value for name, value in terms.items()) * dt, terms

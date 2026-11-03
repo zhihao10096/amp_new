@@ -1,11 +1,14 @@
+from dataclasses import asdict
+from types import SimpleNamespace
+
 import pytest
 import torch
 
 from go2_supermimic import velocity as v
 from go2_supermimic.supermimic.buffer import ReplayBuffer
 from go2_supermimic.supermimic.imagine import CRITIC_DIM, ImagineCfg, Imagination
-from go2_supermimic.supermimic.train import Actor, Critic, TrainCfg, load_checkpoint
-from go2_supermimic.supermimic.world_model import RunningNorm, WorldModel
+from go2_supermimic.supermimic.train import Actor, Critic, TrainCfg, Trainer, load_checkpoint, task_from_dict
+from go2_supermimic.supermimic.world_model import RunningNorm, WorldModel, mlp
 from test_velocity import consts, standing
 
 
@@ -16,12 +19,14 @@ def test_replay_wraparound_preserves_terminal_transitions_and_masks_resets():
     a = torch.zeros(1, 12)
     # A terminal next state deliberately differs from the next episode's state.
     buf.add(s, s + 0.5, a, a, torch.zeros(1, v.FRAME_DIM), torch.zeros(1, 3),
-            torch.ones(1), torch.tensor([step == 4]))
+            torch.ones(1), torch.tensor([step == 4]), torch.full((1, v.GAIT_DIM), float(step)))
   window = buf.sample_windows(8, 4)
   torch.testing.assert_close(window["states"][0, :, 0], torch.tensor([3., 4., 5., 6.]))
   torch.testing.assert_close(window["next_states"][0, :, 0], torch.tensor([3.5, 4.5, 5.5, 6.5]))
   torch.testing.assert_close(window["valid"], torch.tensor([[1., 1., 0., 0.]]).repeat(8, 1))
-  assert buf.sample_states(8)["obs"].dtype == torch.float32
+  seeds = buf.sample_states(8)
+  assert seeds["obs"].dtype == torch.float32
+  torch.testing.assert_close(seeds["gait"][:, 0], seeds["s"][:, 0])
 
 
 def test_running_norm_merges_batches_correctly():
@@ -87,3 +92,73 @@ def test_reject_incompatible_legacy_checkpoint_and_invalid_replay_config(tmp_pat
     TrainCfg(buffer_len=2, wm_window=8)
   with pytest.raises(ValueError, match="continue_run"):
     TrainCfg(continue_run=True)
+
+
+def test_v1_warm_start_preserves_actor_and_original_dynamics(tmp_path):
+  torch.manual_seed(5)
+  from torch import nn
+  old = nn.Module()
+  old.net = mlp(34 + 24, (16, 16), 34)
+  old.in_norm = RunningNorm(58)
+  old.out_norm = RunningNorm(34)
+  actor = Actor(v.FRAME_DIM * 5, (16,))
+  path = tmp_path / "v1.pt"
+  torch.save({"format": "isaaclab_velocity_v1", "actor": actor.state_dict(),
+              "world_model": old.state_dict()}, path)
+  trainer = Trainer.__new__(Trainer)
+  trainer.device = "cpu"
+  trainer.actor = Actor(v.FRAME_DIM * 5, (16,))
+  trainer.wm = WorldModel((16, 16))
+  trainer.warm_start(path)
+  state = standing(8)
+  state[:, v.FOOT_POS] = torch.randn(8, 12)
+  action, prev = torch.randn(8, 12), torch.randn(8, 12)
+  with torch.no_grad():
+    expected = state[:, :34] + old.out_norm.unnormalize(
+      old.net(old.in_norm(torch.cat([state[:, :34], action, prev], -1))))
+    actual = trainer.wm(state, action, prev)
+  torch.testing.assert_close(actual[:, :34], expected)
+  torch.testing.assert_close(actual[:, 34:], state[:, 34:])
+  observation = torch.randn(8, v.FRAME_DIM * 5)
+  torch.testing.assert_close(trainer.actor(observation), actor(observation))
+
+
+def test_old_task_settings_keep_the_original_reward_definition():
+  data = {"commands": {}, "rewards": {"joint_deviation": -.05, "action_rate": -.01}}
+  task = task_from_dict(data)
+  assert task.reward_profile == "legacy"
+  assert task.rewards.feet_air_time == task.rewards.feet_slide == task.rewards.energy == 0
+
+
+def test_reference_checkpoint_resumes_after_adding_optional_gait_settings(tmp_path):
+  original = asdict(v.VelocityTaskCfg())
+  original["reward_profile"] = "unitree_reference"
+  for key in ("feet_clearance", "feet_contact_without_command", "gait_duration", "diagonal_gait"):
+    del original["rewards"][key]
+  for key in ("swing_height", "clearance_variance", "target_air_time", "target_stance_time"):
+    del original[key]
+  restored = task_from_dict(original)
+  assert restored.rewards.gait_duration == restored.rewards.feet_clearance == 0
+  trainer = Trainer.__new__(Trainer)
+  trainer.device = "cpu"
+  trainer.cfg = TrainCfg(continue_run=True, resume="checkpoint.pt")
+  trainer.env = SimpleNamespace(cfg=SimpleNamespace(task=restored), step_dt=.02)
+  trainer.actor = Actor(v.FRAME_DIM * 5, (8,))
+  trainer.critic = Critic(CRITIC_DIM, (8,))
+  trainer.wm = WorldModel((8,))
+  for name, model in (("actor", trainer.actor), ("critic", trainer.critic), ("wm", trainer.wm)):
+    setattr(trainer, "opt_" + name, torch.optim.Adam(model.parameters()))
+  path = tmp_path / "reference.pt"
+  torch.save({
+    "format": "isaaclab_velocity_v2", "task_cfg": original, "dt": .02,
+    "iteration": 42, "env_steps": 8192, "sim_steps": 16,
+    "actor": trainer.actor.state_dict(), "critic": trainer.critic.state_dict(),
+    "world_model": trainer.wm.state_dict(),
+    **{name: getattr(trainer, name).state_dict() for name in ("opt_actor", "opt_critic", "opt_wm")},
+  }, path)
+  trainer.load(path)
+  assert trainer.start_it == 42 and trainer.env_steps == 8192
+  assert trainer.env.common_step_counter == 16
+  trainer.env.cfg.task.rewards.feet_clearance = .5
+  with pytest.raises(ValueError, match="task settings differ"):
+    trainer.load(path)

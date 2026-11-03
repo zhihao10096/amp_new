@@ -94,3 +94,64 @@ def test_dc_motor_torque_drops_at_the_speed_limit():
   torch.testing.assert_close(torque, torch.full((1, 12), 23.5))
   s[:, v.QD] = 30
   assert (v.motor_torque(s, a, consts(), v.VelocityTaskCfg()) == 0).all()
+
+
+def test_contact_event_timers_and_unitree_foot_rewards():
+  gait = torch.zeros(1, v.GAIT_DIM)
+  c0 = torch.tensor([[0., 1., 1., 0.]])
+  gait[:, v.AIR] = torch.tensor([[.2, 0, 0, .3]])
+  gait[:, v.STANCE] = torch.tensor([[0, .4, .5, 0]])
+  c1 = torch.tensor([[1., 0., 1., 0.]])
+  next_gait, touch = v.advance_gait(gait, c0, c1, .02)
+  torch.testing.assert_close(touch, torch.tensor([[1., 0., 0., 0.]]))
+  torch.testing.assert_close(next_gait[:, v.AIR], torch.tensor([[0., .02, 0., .32]]))
+  torch.testing.assert_close(next_gait[:, v.LAST_AIR], torch.tensor([[.22, 0., 0., 0.]]))
+  torch.testing.assert_close(next_gait[:, v.LAST_STANCE], torch.tensor([[0., .42, 0., 0.]]))
+  before, after = standing(1), standing(1)
+  before[:, v.CONTACT], after[:, v.CONTACT] = c0, c1
+  after[:, v.FOOT_VEL] = torch.tensor([[1., 0., 2.]]).repeat(1, 4)
+  _, terms = v.reward(before, after, torch.zeros(1, 12), torch.zeros(1, 12),
+                      torch.tensor([[1., 0., 0.]]), consts(), v.VelocityTaskCfg(),
+                      .02, torch.zeros(1), gait)
+  torch.testing.assert_close(terms["feet_air_time"], torch.tensor([-.28]))
+  torch.testing.assert_close(terms["feet_slide"], torch.tensor([2.]))
+  expected = next_gait[:, v.LAST_AIR].var(-1) + next_gait[:, v.LAST_STANCE].var(-1)
+  torch.testing.assert_close(terms["air_time_variance"], expected)
+
+
+def test_reference_standing_penalty_energy_and_soft_contact_gradients():
+  s = standing(2)
+  s[:, v.Q] = .1
+  s[:, v.QD] = 2
+  commands = torch.tensor([[0., 0., 0.], [1., 0., 0.]])
+  cfg = v.VelocityTaskCfg()
+  _, terms = v.reward(s, s, torch.ones(2, 12), torch.zeros(2, 12), commands,
+                      consts(), cfg, .02, torch.zeros(2), torch.zeros(2, v.GAIT_DIM))
+  torch.testing.assert_close(terms["joint_deviation"][0], 5 * terms["joint_deviation"][1])
+  torch.testing.assert_close(terms["joint_velocity"], torch.full((2,), 48.))
+  assert (terms["energy"] > 0).all()
+  soft = torch.full((2, 4), .5, requires_grad=True)
+  gait, touchdown = v.advance_gait(torch.ones(2, v.GAIT_DIM) * .1,
+                                  torch.zeros(2, 4), soft, .02)
+  (gait.square().sum() + touchdown.sum()).backward()
+  assert torch.isfinite(soft.grad).all() and soft.grad.abs().sum() > 0
+
+
+def test_gait_shaping_rewards_clear_swing_diagonals_and_quiet_standing():
+  s = standing(2)
+  s[:, v.FOOT_POS] = torch.tensor([[0., 0., -.27]]).repeat(2, 4)
+  s[1, v.FOOT_POS] = torch.tensor([[0., 0., -.24]]).repeat(1, 4)
+  s[:, v.FOOT_VEL] = torch.tensor([[1., 0., 0.]]).repeat(2, 4)
+  s[:, v.CONTACT] = torch.tensor([[1., 0., 0., 1.], [1., 1., 1., 1.]])
+  cfg = v.VelocityTaskCfg()
+  action = torch.zeros(2, 12)
+  cmd = torch.tensor([[1., 0., 0.]]).repeat(2, 1)
+  gait = torch.full((2, v.GAIT_DIM), .18)
+  _, terms = v.reward(s, s, action, action, cmd, consts(), cfg, .02, torch.zeros(2), gait)
+  assert terms["feet_clearance"][1] > terms["feet_clearance"][0]
+  torch.testing.assert_close(terms["gait_duration"], torch.zeros(2))
+  torch.testing.assert_close(terms["diagonal_gait"], torch.tensor([1., .5]))
+  _, stationary = v.reward(s, s, action, action, torch.zeros_like(cmd),
+                           consts(), cfg, .02, torch.zeros(2), gait)
+  torch.testing.assert_close(stationary["feet_contact_without_command"], torch.tensor([2., 4.]))
+  torch.testing.assert_close(stationary["feet_clearance"], torch.zeros(2))

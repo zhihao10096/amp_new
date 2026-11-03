@@ -12,6 +12,11 @@
 vx / vy / yaw-rate = **0.048 / 0.032 / 0.039**，独立标准/带噪声评估均零摔倒。
 模型和录像保留在本地，详见 [收敛验证记录](CONVERGENCE.md)。
 
+步态改进模型为 `checkpoints/go2_velocity_gait.pt`：1 m/s 的每足步频从 6.04 降到
+2.63 Hz，1.5 m/s 从 8.71 降到 2.75 Hz，抬脚和滑移均改善；
+标准/带噪声完整评估合计 640 机器人分钟零摔倒。奖励、验收和训练参数见
+[步态验证记录](GAIT.md)，本地对比视频为 `videos/go2_gait_comparison.mp4`。
+
 ## 环境与安装
 
 验证版本：Python 3.10、Isaac Lab 2.1.0、Isaac Sim 4.5.0、Torch 2.5.1，CUDA GPU。
@@ -58,6 +63,23 @@ tensorboard --logdir logs/supermimic
 恢复时自动使用检查点中的网络尺寸和任务设置，并重新收集回放数据。
 短跑用于检查执行链路，运动策略需要持续训练后按下面的实际速度误差评估。
 
+新版默认奖励参考 Unitree Go2 的速度任务，增加足端接触、腾空时序、滑移和摆脚高度约束。
+已有速度策略可用 `--warm-start <model.pt>` 保留 actor 和动力学，重新拟合新增状态并训练
+critic。`--resume` 会恢复检查点的原奖励；修改奖励后继续训练应使用 `--warm-start`。
+
+本机 RTX 4070 Ti SUPER 16 GB 的吞吐测试中，8192 环境、世界模型批次 4096、
+想象批次 8192 约采集 9.4 万条真实转移/秒，显存峰值 14,419 MiB；
+1024 环境约 1.8 万条/秒。可用以下参数运行，显存较少时相应缩小：
+
+```bash
+python scripts/train.py --headless --num-envs 8192 --wm-batch 4096 \
+  --wm-updates 4 --imag-batch 8192 --buffer-len 256 --run-name gait
+```
+
+训练日志包含真实/想象转移吞吐。`--stop-file <path>` 可在该文件出现时保存并在迭代边界
+停止；恢复前需移走该文件。更大的 batch 应以吞吐和策略质量评估，本机世界模型批次
+8192 的吞吐约 7.3 万条/秒，低于批次 4096。
+
 ## 评估与录像
 
 ```bash
@@ -79,6 +101,10 @@ python scripts/benchmark.py --headless --checkpoints <model.pt> \
   --output logs/convergence/benchmark.json --seconds 30 --repeats 8 \
   --seeds 42 123 2026
 # 加 --observation-noise 可评估训练时的传感器噪声。
+
+# 7 种固定指令的步频、腾空时长、抬脚高度、足滑和能耗对比。
+python scripts/gait_eval.py --headless --checkpoints <old.pt> <new.pt> \
+  --output logs/gait/comparison.json --seconds 20 --repeats 8
 ```
 
 不带 `--headless` 可打开 Isaac Sim 窗口。评估关闭观测噪声，随机种子默认 42；固定
@@ -91,16 +117,18 @@ python scripts/benchmark.py --headless --checkpoints <model.pt> \
 - actor 每帧 45 维：角速度 3、重力投影 3、速度指令 3、关节位置偏移 12、
   关节速度 12、上一动作 12；按观测项保存 5 帧历史，共 **225 维**。
   reset 清空历史，随后填入首帧。actor 不输入真实线速度。
-- 世界模型状态 34 维：机身高度 1、重力投影 3、机体系线速度 3、角速度 3、
-  关节位置偏移 12、关节速度 12。模型以当前状态、当前动作、上一动作预测状态增量。
-- 奖励包含 XY 速度与 yaw-rate 指数跟踪、姿态/高度、动作变化、力矩、关节加速度和
-  关节限位项。高度低于 0.16 m 或倾角超过 60° 终止，episode 最长 20 秒。
+- 世界模型状态 63 维：原有机身/关节状态 34 维，加足端位置 12、足端速度 12、
+  足端接触 4、非足端接触数量 1。模型以当前状态、当前动作、上一动作预测状态增量。
+  回放另外保存 16 维足端腾空/支撑计时，由仿真和想象共用的可微计时器更新。
+- 奖励包含速度跟踪、姿态、关节偏差/速度、动作变化、力矩、能耗、关节加速度、
+  关节限位，以及腾空时长、时长方差、足滑、非足接触、摆脚高度、站立足接触和
+  对角配合约束。高度低于 0.16 m 或倾角超过 60° 终止，episode 最长 20 秒。
 - 真实环境和想象使用相同的 Torch 观测及奖励函数；想象将相同终止边界平滑为生存概率。
   回放显式保存自动重置前的终止状态，多步损失不跨 episode 传播。
 
 检查点包含 actor、critic、world model、归一化统计、优化器、任务配置和迭代计数，
-使用 `isaaclab_velocity_v1` 格式。旧小球/避障任务、MuJoCo 模型、演示和旧策略已删除；
-旧检查点的观测与动力学接口不适用于新任务。
+使用 `isaaclab_velocity_v2` 格式；原速度任务的 v1 检查点可评估或通过 `--warm-start`
+迁移，actor 的 225 维观测接口保持兼容。旧小球/避障任务的检查点不适用于速度任务。
 
 ## 目录
 
@@ -109,7 +137,7 @@ go2_supermimic/
   velocity.py       共用的纯 Torch 指令、观测、奖励、终止及电机模型
   env/              Isaac Lab 配置、任务注册和 DirectRLEnv
   supermimic/       状态适配、回放、世界模型、想象滚动和训练器
-scripts/            train.py、eval.py、benchmark.py
+scripts/            train.py、eval.py、benchmark.py、gait_eval.py
 tests/              数值/梯度回归测试及显式 GPU 集成检查
 PROGRESS.md         迁移进度及实际验证记录
 CONVERGENCE.md      收敛标准、测量结果及本地模型位置

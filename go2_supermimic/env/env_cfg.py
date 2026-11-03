@@ -3,6 +3,7 @@
 import isaaclab.sim as sim_utils
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
 from isaaclab_assets import UNITREE_GO2_CFG
 
@@ -23,4 +24,8 @@ class Go2VelocityEnvCfg(DirectRLEnvCfg):
   )
   scene = InteractiveSceneCfg(num_envs=1024, env_spacing=4.0, replicate_physics=True)
   robot = UNITREE_GO2_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+  contact_sensor = ContactSensorCfg(
+    prim_path="/World/envs/env_.*/Robot/.*", history_length=4,
+    track_air_time=True, update_period=0.005,
+  )
   task = VelocityTaskCfg()

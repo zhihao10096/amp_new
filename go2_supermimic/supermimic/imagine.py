@@ -6,7 +6,7 @@ import torch
 
 from go2_supermimic import velocity as v
 
-CRITIC_DIM = v.STATE_DIM + v.NUM_JOINTS + 4  # state, previous action, command, time
+CRITIC_DIM = v.STATE_DIM + v.GAIT_DIM + v.NUM_JOINTS + 4
 
 
 @dataclass
@@ -22,24 +22,26 @@ class Imagination:
     self.cfg, self.task, self.consts = cfg, task, consts
 
   @staticmethod
-  def critic_input(s, previous_action, commands, remaining):
-    return torch.cat([s, previous_action, commands, remaining[:, None]], -1)
+  def critic_input(s, previous_action, commands, remaining, gait):
+    return torch.cat([s, previous_action, commands, remaining[:, None], gait], -1)
 
   def rollout(self, wm, actor, critic, seed):
     cfg, task = self.cfg, self.task
     s, previous, history = seed["s"], seed["a_prev"], seed["obs"]
     commands, remaining = seed["commands"], seed["command_time"]
+    gait = seed.get("gait", s.new_zeros(s.shape[0], v.GAIT_DIM))
     survival = torch.ones(s.shape[0], device=s.device)
     objective = torch.zeros_like(survival)
     rewards, survivals, inputs, continuations = [], [survival], [], []
     discount = 1.0
     for _ in range(cfg.horizon):
-      inputs.append(self.critic_input(s, previous, commands, remaining))
+      inputs.append(self.critic_input(s, previous, commands, remaining, gait))
       action = actor(history).clamp(-task.action_clip, task.action_clip)
       next_s = wm(s, action, previous)
       death = v.termination_probability(next_s, task)
       reward, _ = v.reward(s, next_s, action, previous, commands,
-                           self.consts, task, cfg.dt, death)
+                           self.consts, task, cfg.dt, death, gait)
+      gait, _ = v.advance_gait(gait, s[:, v.CONTACT], next_s[:, v.CONTACT], cfg.dt)
       objective = objective + discount * survival * reward
       survival = survival * (1 - death)
       continuations.append(1 - death)
@@ -50,7 +52,7 @@ class Imagination:
       history = v.push_history(history, frame, task.history)
       s, previous = next_s, action
       discount *= cfg.gamma
-    inputs.append(self.critic_input(s, previous, commands, remaining))
+    inputs.append(self.critic_input(s, previous, commands, remaining, gait))
     objective = objective + discount * survival * critic(inputs[-1]).squeeze(-1)
     return objective, {
       "rewards": torch.stack(rewards, 1).detach(),
