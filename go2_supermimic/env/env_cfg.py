@@ -100,6 +100,11 @@ class Go2VelocityEnvCfg(ManagerBasedRLEnvCfg):
 
   def configure_task(self):
     """Resolve checkpoint/task overrides before managers are constructed."""
+    # The default patch buffer fits small scenes, but mass landing and resets
+    # need more contacts at large environment counts. Allow 32 patches/robot,
+    # including non-foot contacts, without reducing the physics fidelity.
+    self.sim.physx.gpu_max_rigid_patch_count = max(
+      self.sim.physx.gpu_max_rigid_patch_count, 32 * self.scene.num_envs)
     self.commands.base_velocity.resampling_time_range = self.task.commands.resampling_time
     self.actions.joint_position.scale = self.task.action_scale
     self.actions.joint_position.raw_clip = self.task.action_clip

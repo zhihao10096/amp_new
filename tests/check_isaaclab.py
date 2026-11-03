@@ -10,8 +10,11 @@ from types import SimpleNamespace
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--num-envs", type=int, default=16)
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
+if args.num_envs <= 0:
+  parser.error("num-envs must be positive")
 launcher = AppLauncher(args)
 env = None
 try:
@@ -26,7 +29,8 @@ try:
   from go2_supermimic.supermimic.train import TrainCfg, Trainer
 
   cfg = Go2VelocityEnvCfg()
-  cfg.scene.num_envs = 16
+  n = args.num_envs
+  cfg.scene.num_envs = n
   cfg.sim.device = args.device
   cfg.seed = 13
   cfg.episode_length_s = 0.12
@@ -41,7 +45,7 @@ try:
   assert set(env.termination_manager.active_terms) == {"fall", "time_out"}
   assert env.event_manager.active_terms["reset"] == ["reset_robot"]
   obs, _ = env.reset()
-  assert obs["policy"].shape == (16, 225)
+  assert obs["policy"].shape == (n, 225)
   assert len(env.robot.joint_names) == 12
   resets = falls = resamples = 0
   for step in range(30):
@@ -55,7 +59,7 @@ try:
     command, time = env.commands.clone(), env.command_time.clone()
     history = obs["policy"].clone()
     gait = env.gait.clone()
-    action = torch.randn(16, 12, device=env.device) * 0.1
+    action = torch.randn(n, 12, device=env.device) * 0.1
     obs, actual, terminated, truncated, extras = env.step(action)
     state = extras["transition"]["next_state"]
     torch.testing.assert_close(extras["transition"]["commands"], command)
@@ -85,19 +89,19 @@ try:
   assert resets > 0 and falls > 0 and resamples > 0
   env.set_command((0.7, -0.2, 0.4))
   for _ in range(15):
-    obs, _, _, _, extras = env.step(torch.zeros(16, 12, device=env.device))
-    torch.testing.assert_close(env.commands, env.fixed_command.expand(16, -1))
-  batch = torch.zeros(16, 3, device=env.device)
-  batch[:, 0] = torch.linspace(-1, 1.5, 16, device=env.device)
+    obs, _, _, _, extras = env.step(torch.zeros(n, 12, device=env.device))
+    torch.testing.assert_close(env.commands, env.fixed_command.expand(n, -1))
+  batch = torch.zeros(n, 3, device=env.device)
+  batch[:, 0] = torch.linspace(-1, 1.5, n, device=env.device)
   env.set_command(batch)
   for _ in range(15):
-    env.step(torch.zeros(16, 12, device=env.device))
+    env.step(torch.zeros(n, 12, device=env.device))
     torch.testing.assert_close(env.commands, batch)
   env.set_command(None)
   env.reset()
   assert env.fixed_command is None
   assert not torch.equal(env.commands, batch)
-  action = torch.full((16, 12), 8.0, device=env.device)
+  action = torch.full((n, 12), 8.0, device=env.device)
   env.step(action)
   torch.testing.assert_close(action, torch.full_like(action, 8.0))
   torch.testing.assert_close(env.action_manager.action, torch.full_like(action, 4.0))
