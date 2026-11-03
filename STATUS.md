@@ -2,13 +2,13 @@
 
 ## 目标、版本与目录
 - 权威目录`/pfs/user/learning/amp_new`，SSH `ssh -p 9205 root@118.196.87.69`；本地旧镜像仅供参考。恢复先读GOAL/PLAN/本文件/PROGRESS，再核实HEAD、队列PID与GPU，避免重复启动。
-- 当前代码已验证commit `754e1fd8410fc1fbd805461d17ced77e018c5209`；本次记录更新前HEAD `7d26d21cb7e41ff57e4614d369ea4f1cc3c1870e`，之后仅文档提交。当前文档HEAD以`git rev-parse HEAD`核实；R3启动后以process.json记录源commit。
+- R3来源commit `9bc7115a082eafc403d5f8fb2947d10e3cac38b2`（训练代码与已验证754e1fd相同，后续为文档提交）；当前文档HEAD以`git rev-parse HEAD`核实，训练来源见formal_r3.launch.json/process.json。
 - Manager/A1已完成 → 当前G1平地walk → 成功提交后X1下半身12DOF AMP。全程WM可微想象、禁PPO，各阶段独立验收和提交。X1部署配置参考reference/AMP、跳过RKNN；其动作复制项目后.gitignore忽略，来源/许可/SHA256/split清单入Git。
 - 保留未跟踪reference/、exploration.py、explore_eval.py、dynamics_eval.py、test_exploration.py，勿误提交或改写。
 
 ## 进程与下一轮配置
-- R2原队列PID2611110及所有训练/评估子进程均已退出，状态formal_r2.pipeline.json为assessment3000_complete；三份完整评估均失败，不续训原配置。动作响应/零对照/噪声覆盖诊断也均退出，报告已解析；未启动R3。
-- R3准备脚本`logs/amp_g1/formal_r3.pipeline.py`；计划新随机初始化seed0，num_envs18432、collect1/buffer128，WM4096×4/window8/hidden512×3，imag8192/H32，actor/critic512,256,128，critic3×4；actor_lr_scale.15，预热WM300+critic200/actor_ramp500，FP32 highest/compile。
+- R2原队列PID2611110及所有训练/评估子进程均已退出，状态formal_r2.pipeline.json为assessment3000_complete；三份完整评估均失败，不续训原配置。动作响应/零对照/噪声覆盖诊断也均退出，报告已解析。2026-11-04T04:51:09核实R3队列PID2636134和训练PID2636299均存活，阶段formal_r3_train；运行目录`logs/supermimic/2026-11-04_04-51-38_136861_g1_amp_formal_r3_exploration`；当前最新`logs/supermimic/2026-11-04_04-51-38_136861_g1_amp_formal_r3_exploration/model_0.pt`，尚无通过验收的最佳G1模型。
+- R3运行脚本`logs/amp_g1/formal_r3.pipeline.py`；新随机初始化seed0，num_envs18432、collect1/buffer128，WM4096×4/window8/hidden512×3，imag8192/H32，actor/critic512,256,128，critic3×4；actor_lr_scale.15，预热WM300+critic200/actor_ramp500，FP32 highest/compile。
 - 仅OU explore_noise .3→.6，其余与R2相同：explore_frac.25、Gaussian action_noise.1；AMP2048×2/interval5/lr1e-5/GP40/hidden512,256、weight.5/ramp1000/RSI.5；任务、动作、split及验收不变。训练至3000，保存0/1000/2000/3000，再三点分别完整评估；三点全过才最终加噪/录像/审计。
 - R3初始审计要求与R2初始四网逐位一致、全新优化器、cfg仅run_name/stop_file/explore_noise不同、动作/资产Git副本和split一致；停机请求路径logs/amp_g1/stop_formal_r3，存在时先核实原因，不带旧停止文件重启。
 
@@ -27,7 +27,15 @@
 - RTX4090D24GB；.venv Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5。实测18432约5.41万真实转移/s、峰值23108MiB（恢复最高23918）；保留完整学习批次。仿真清PYTHONPATH，OMNI_KIT_ACCEPT_EULA=YES、OMNI_KIT_ALLOW_ROOT=1、TORCHINDUCTOR_COMPILE_THREADS=4；Kit后写中文文档显式UTF-8。开发机无rg/系统python，用.venv/bin/python。
 
 ## 下一条命令与恢复
-- 下一步先提交本轮决定，再核实无R3进程、无stop_formal_r3，启动logs/amp_g1/formal_r3.pipeline.py；启动后立即补PID、实际目录与源commit。随后`cat logs/amp_g1/formal_r3.pipeline.json && tail -n 2 logs/amp_g1/formal_r3_train.log && nvidia-smi`。若parent退出而active_pid还活着，先核实该子进程，不能重复启动。
+- 同一R3训练正在初始化；下一条命令`cat logs/amp_g1/formal_r3.pipeline.json && tail -n 2 logs/amp_g1/formal_r3_train.log && nvidia-smi`。若parent退出而active_pid还活着，先核实该子进程，不能重复启动。
 - G1仍未成功；按R3真实迈步/完整独立结果决定后续，不降标准。X1仅只读预查logs/amp_x1/reference_prereview.json（源6189ae4）提示旧31DOF审计工具与12DOF接口不同，G1完成前不接入。
 
 历史：[R2诊断](docs/history/STATUS_2026-11-04_g1_r2_diagnosis.md)、[R1诊断](docs/history/STATUS_2026-11-04_g1_r1_diagnosis.md)、[G1实现](docs/history/STATUS_2026-11-04_g1_implementation.md)、[A1](docs/history/STATUS_2026-11-04_a1_final_eval.md)。
+
+- G1正式R3启动formal_r3_train，PID2636299，命令/日志logs/amp_g1/formal_r3_train.process.json及.log，状态logs/amp_g1/formal_r3.pipeline.json；不得重复启动。
+
+- G1正式R3 model_0随机来源/四优化器全新/任务与动作split/SHA256及Git资产副本审计通过，证据logs/amp_g1/formal_r3_initial_audit.json；尚未收敛。
+
+- R3 model_0初始审计通过：四网与R2逐位一致、四优化器全新、task/split/SHA256/Git资产一致；cfg仅explore_noise/run_name/stop_file变化，证据logs/amp_g1/formal_r3_initial_audit.json。训练已实际推进50（WM预热），不作收敛判断。
+
+- 2026-11-04T04:55:14.663735核实同一R3 PID2636299训练至800；最新logs/supermimic/2026-11-04_04-51-38_136861_g1_amp_formal_r3_exploration/model_0.pt，无已验收最佳模型。训练线速度误差0.63146、摔倒53.613/分钟、actor梯度0.50006；GPU实测峰值约23124MiB、利用率86%。此为训练过程信号，不是行走结果。精确快照logs/amp_g1/formal_r3_latest_observation.json；继续同一队列至3000及三点完整评估。
