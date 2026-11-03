@@ -25,6 +25,16 @@ INITIAL_WEIGHTS = {
 }
 
 
+def restore_curriculum_options(values: dict, saved: dict, arguments: list[str]) -> dict:
+  """Inherit the saved schedule unless the caller explicitly overrides it."""
+  result = dict(values)
+  supplied = {arg.split("=", 1)[0] for arg in arguments}
+  for name in ("reward_curriculum_start", "reward_curriculum_end"):
+    if "--" + name.replace("_", "-") not in supplied:
+      result[name] = saved.get(name, result[name])
+  return result
+
+
 def curriculum_fraction(iteration: int, start: int, end: int) -> float:
   if end == 0 or iteration >= end:
     return 1.0

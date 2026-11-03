@@ -1,12 +1,14 @@
 """Train Go2 velocity tracking with Isaac Lab and SuperMimic."""
 
 import argparse
+import sys
 import traceback
 from dataclasses import fields
 
 from isaaclab.app import AppLauncher
 
 from go2_supermimic.supermimic.train import TrainCfg
+from go2_supermimic.supermimic.curriculum import restore_curriculum_options
 
 
 def main():
@@ -23,7 +25,13 @@ def main():
       parser.add_argument(flag, type=type(value), default=value)
   AppLauncher.add_app_launcher_args(parser)
   args = parser.parse_args()
-  cfg = TrainCfg(**{f.name: getattr(args, f.name) for f in fields(defaults)})
+  values = {f.name: getattr(args, f.name) for f in fields(defaults)}
+  resume_checkpoint = None
+  if args.resume:
+    from go2_supermimic.supermimic.train import load_checkpoint
+    resume_checkpoint = load_checkpoint(args.resume, "cpu")
+    values = restore_curriculum_options(values, resume_checkpoint["cfg"], sys.argv[1:])
+  cfg = TrainCfg(**values)
   if cfg.task != "Go2-Velocity-Flat":
     parser.error("the available task is Go2-Velocity-Flat")
   launcher = AppLauncher(args)
@@ -42,7 +50,8 @@ def main():
     env_cfg.sim.device = args.device
     env_cfg.seed = cfg.seed
     if cfg.resume or cfg.warm_start:
-      ckpt = load_checkpoint(cfg.resume or cfg.warm_start, "cpu")
+      ckpt = (resume_checkpoint if resume_checkpoint is not None
+              else load_checkpoint(cfg.warm_start, "cpu"))
       if cfg.resume:
         env_cfg.task = task_from_dict(ckpt["task_cfg"])
       # A checkpoint's architecture is part of its interface.

@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from go2_supermimic.supermimic.curriculum import curriculum_fraction, training_task
+from go2_supermimic.supermimic.curriculum import (
+  curriculum_fraction, restore_curriculum_options, training_task,
+)
 from go2_supermimic.supermimic.train import TrainCfg, Trainer
 from go2_supermimic.velocity import VelocityTaskCfg
 
@@ -47,3 +49,19 @@ def test_simulator_managers_and_imagination_use_the_same_scheduled_weights():
       assert terms[name].weight == value
     assert target.rewards.gait_duration == -8
   assert asdict(trainer.imag.task) == asdict(target)
+
+
+def test_resume_inherits_schedule_and_respects_explicit_zero_or_partial_overrides():
+  values = asdict(TrainCfg())
+  saved = {"reward_curriculum_start": 3000, "reward_curriculum_end": 5000}
+  inherited = TrainCfg(**restore_curriculum_options(values, saved, []))
+  assert (inherited.reward_curriculum_start, inherited.reward_curriculum_end) == (3000, 5000)
+  values["reward_curriculum_start"] = 3500
+  partial = TrainCfg(**restore_curriculum_options(
+    values, saved, ["--reward-curriculum-start=3500"]))
+  assert (partial.reward_curriculum_start, partial.reward_curriculum_end) == (3500, 5000)
+  values["reward_curriculum_start"] = 0
+  disabled = TrainCfg(**restore_curriculum_options(
+    values, saved, ["--reward-curriculum-start", "0", "--reward-curriculum-end", "0"]))
+  assert disabled.reward_curriculum_start == disabled.reward_curriculum_end == 0
+  assert restore_curriculum_options(values, {}, []) == values

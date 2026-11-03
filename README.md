@@ -74,7 +74,7 @@ python scripts/train.py --headless --reward-curriculum-start 3000 \
 ```
 
 调度在真实RewardManager与想象中使用相同权重；checkpoint保留最终任务配置并记录实际
-调度比例，恢复按总迭代数继续。评估始终使用最终任务，完整验收拒绝尚未到最终权重的
+调度比例；恢复默认继承checkpoint中的调度参数，显式传参可覆盖，并按总迭代数继续。评估始终使用最终任务，完整验收拒绝尚未到最终权重的
 checkpoint。默认不启用调度；这项策略仍在训练验证，不能视为收敛证据。
 
 `TrainCfg` 的字段均可用同名短横线参数设置，完整列表见 `--help`。默认 1024 个环境、
