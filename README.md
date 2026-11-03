@@ -43,7 +43,8 @@ vx / vy / yaw-rate = **0.048 / 0.032 / 0.039**，独立标准/带噪声评估均
 python -m pytest tests --ignore=tests/test_exploration.py
 python tests/check_g1_isaaclab.py --headless --compile
 python scripts/train.py --headless --task G1-AMP-Flat \
-  --matmul-precision highest --compile-imagination --run-name g1_amp
+  --matmul-precision highest --compile-imagination --run-name g1_amp \
+  --amp-update-interval 5 --amp-lr 1e-5 --amp-grad-penalty 40
 # 独立验收使用同一脚本的G1分支；报告必须来自正式model_0及连续三检查点。
 python scripts/check_amp_convergence.py --robot g1 \
   --initial-checkpoint <model_0.pt> --baseline-gait <initial_gait.json> \
@@ -56,6 +57,9 @@ G1是29维动作、480维策略历史、83维世界模型状态和8维足端计�
 世界模型/判别器的可微想象更新，四网络/四优化器均保存恢复，全程禁PPO。
 正式验收预先记录于[G1_CONVERGENCE.md](G1_CONVERGENCE.md)，当前实验配置和所选
 并行数见STATUS；接口或短跑通过不等于行走收敛。
+判别器`--amp-update-interval N`按预热后的全局迭代计数，默认1，CLI恢复自动继承；
+显式`--amp-lr`会覆盖保存的D优化器学习率。G1第二轮按上游[Issue 28](https://github.com/zitongbai/legged_lab/issues/28)
+减慢D更新以缓解饱和；实际配置和独立结果仍以STATUS/G1_CONVERGENCE为准。
 
 G1独立成功后进入X1：参考reference/AMP，仅下半身12DOF进入策略输出；X1参考动作
 复制到项目后用.gitignore忽略，来源/SHA256/split清单仍纳入Git。部署相关配置以该

@@ -76,6 +76,8 @@ class TrainCfg:
   amp_lr: float = 1e-4
   amp_batch: int = 2048
   amp_updates: int = 2
+  amp_update_interval: int = 1
+  """Update D every N iterations after WM warm-up; actor cadence is unchanged."""
   amp_grad_penalty: float = 10.
   amp_ramp_iterations: int = 1000
   amp_reference_reset_fraction: float = .5
@@ -86,7 +88,7 @@ class TrainCfg:
     for name in ("num_envs", "iterations", "collect_steps", "buffer_len", "wm_window", "wm_batch",
                  "wm_updates", "horizon", "imag_batch", "critic_epochs", "critic_minibatches",
                  "log_interval", "save_interval", "lr_decay_iterations", "amp_batch",
-                 "amp_updates", "amp_ramp_iterations"):
+                 "amp_updates", "amp_update_interval", "amp_ramp_iterations"):
       if getattr(self, name) <= 0:
         raise ValueError(f"{name} must be positive")
     if self.buffer_len < self.wm_window:
@@ -248,6 +250,8 @@ class Trainer:
         raise ValueError("AMP resume requires identical motion data and temporal split")
       self.amp.load_state_dict(ckpt["amp"])
       self.opt_amp.load_state_dict(ckpt["opt_amp"])
+      for group in self.opt_amp.param_groups:
+        group["lr"] = self.cfg.amp_lr
     if self.cfg.continue_run:
       self.start_it, self.env_steps = ckpt["iteration"], ckpt["env_steps"]
       self.env.common_step_counter = ckpt["sim_steps"]
@@ -439,8 +443,11 @@ class Trainer:
         self.collect()
         stats = {"wm_loss": self.fit_world_model(),
                  "reward_curriculum_fraction": self.reward_fraction}
-        if self.amp is not None and iteration > cfg.warmup_iterations:
-          stats.update(self.fit_amp())
+        if self.amp is not None:
+          stats["amp_reward_fraction"] = self.amp_fraction
+          if (iteration > cfg.warmup_iterations
+              and (iteration - cfg.warmup_iterations) % cfg.amp_update_interval == 0):
+            stats.update(self.fit_amp())
         if iteration > cfg.warmup_iterations:
           stats.update(self.improve_policy(update_actor=iteration > actor_start))
         if iteration % cfg.log_interval == 0 or iteration == cfg.iterations:
