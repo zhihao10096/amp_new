@@ -21,8 +21,14 @@ class ImagineCfg:
 class Imagination:
   def __init__(self, cfg: ImagineCfg, task: v.VelocityTaskCfg, consts: v.RobotConsts):
     self.cfg, self.task, self.consts = cfg, task, consts
+    self.reward_parameters = consts.default_q.new_empty(len(v.REWARD_NAMES) + 1)
+    self.update_reward_parameters()
     self._step_fn = torch.compile(self._step, dynamic=False) if cfg.compile else self._step
-    self.use_compiled_step = True
+
+  def update_reward_parameters(self):
+    values = [getattr(self.task.rewards, name) for name in v.REWARD_NAMES]
+    self.reward_parameters.copy_(
+      self.reward_parameters.new_tensor(values + [self.task.joint_deviation_gait_fraction]))
 
   @staticmethod
   def critic_input(s, previous_action, commands, remaining, gait):
@@ -35,7 +41,8 @@ class Imagination:
     next_s = wm(s, action, previous)
     death = v.termination_probability(next_s, task)
     reward, _ = v.reward(s, next_s, action, previous, commands,
-                         self.consts, task, cfg.dt, death, gait)
+                         self.consts, task, cfg.dt, death, gait,
+                         self.reward_parameters if cfg.compile else None)
     gait, _ = v.advance_gait(gait, s[:, v.CONTACT], next_s[:, v.CONTACT], cfg.dt)
     commands, remaining = v.advance_commands(commands, remaining, cfg.dt, task.commands)
     frame = v.obs_frame(next_s, action, commands, task.observation_noise)
@@ -51,9 +58,8 @@ class Imagination:
     objective = torch.zeros_like(survival)
     rewards, survivals, inputs, continuations = [], [survival], [], []
     discount = 1.0
-    step_fn = self._step_fn if self.use_compiled_step else self._step
     for _ in range(cfg.horizon):
-      s, previous, history, commands, remaining, gait, reward, death, critic_in = step_fn(
+      s, previous, history, commands, remaining, gait, reward, death, critic_in = self._step_fn(
         s, previous, history, commands, remaining, gait, wm, actor)
       inputs.append(critic_in)
       objective = objective + discount * survival * reward

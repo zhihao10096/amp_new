@@ -78,6 +78,10 @@ class RewardWeights:
   terminated: float = -10.0
 
 
+REWARD_NAMES = tuple(RewardWeights.__dataclass_fields__)
+REWARD_INDEX = {name: index for index, name in enumerate(REWARD_NAMES)}
+
+
 @dataclass
 class VelocityTaskCfg:
   reward_profile: str = "unitree_gait"
@@ -200,7 +204,8 @@ def advance_gait(gait: torch.Tensor, contact0: torch.Tensor, contact1: torch.Ten
 
 
 def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
-           cfg: VelocityTaskCfg, dt: float, done: torch.Tensor, gait=None):
+           cfg: VelocityTaskCfg, dt: float, done: torch.Tensor, gait=None, parameters=None):
+  """Optional device parameters hold scheduled weights and the formula blend."""
   q = s1[:, Q] + c.default_q
   torque = motor_torque(s1, action, c, cfg)
   if cfg.reward_profile == "legacy":
@@ -209,7 +214,7 @@ def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
     moving = ((commands.norm(dim=-1) > 0)
               | (s1[:, V_B][:, :2].norm(dim=-1) > cfg.stand_velocity_threshold))
     gait_deviation = s1[:, Q].norm(dim=-1) * torch.where(moving, 1.0, cfg.stand_still_scale)
-    fraction = cfg.joint_deviation_gait_fraction
+    fraction = cfg.joint_deviation_gait_fraction if parameters is None else parameters[-1]
     deviation = (1 - fraction) * s1[:, Q].square().sum(-1) + fraction * gait_deviation
   terms = {
     "track_linear_velocity": torch.exp(
@@ -261,4 +266,6 @@ def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
       "gait_duration": duration_cost * moving,
       "diagonal_gait": .5 * (diagonal + opposite) * moving,
     })
-  return sum(getattr(cfg.rewards, name) * value for name, value in terms.items()) * dt, terms
+  total = sum((getattr(cfg.rewards, name) if parameters is None
+               else parameters[REWARD_INDEX[name]]) * value for name, value in terms.items())
+  return total * dt, terms

@@ -110,6 +110,49 @@ def test_compiled_imagination_preserves_returns_and_actor_gradients(monkeypatch)
     torch.testing.assert_close(actual, expected)
 
 
+def test_reward_curriculum_reuses_compiled_graphs_and_matches_eager_gradients(monkeypatch):
+  from go2_supermimic.supermimic.curriculum import training_task
+  from torch._dynamo.backends.registry import lookup_backend
+
+  backend, graphs = lookup_backend("aot_eager"), []
+
+  def counting_backend(graph, inputs):
+    graphs.append(graph)
+    return backend(graph, inputs)
+
+  compile_step = torch.compile
+  monkeypatch.setattr(torch, "compile",
+                      lambda fn, **kw: compile_step(fn, backend=counting_backend, fullgraph=True, **kw))
+  torch.manual_seed(47)
+  target = v.VelocityTaskCfg(history=2, observation_noise=False)
+  wm = WorldModel((16,)).requires_grad_(False)
+  wm.out_norm.var.fill_(1e-4)
+  actor = Actor(v.FRAME_DIM * 2, (16,))
+  critic = Critic(CRITIC_DIM, (16,)).requires_grad_(False)
+  seed = {"s": standing(4), "a_prev": torch.zeros(4, 12),
+          "obs": torch.randn(4, v.FRAME_DIM * 2), "commands": torch.randn(4, 3),
+          "command_time": torch.ones(4) * 10, "gait": torch.ones(4, v.GAIT_DIM) * .1}
+  compiled = Imagination(ImagineCfg(horizon=2, compile=True), target, consts())
+  graph_counts = []
+  for fraction in (0., .123, .5, .999, 1.):
+    task = training_task(target, fraction)
+    compiled.task = task
+    compiled.update_reward_parameters()
+    eager = Imagination(ImagineCfg(horizon=2), task, consts())
+    expected, _ = eager.rollout(wm, actor, critic, seed)
+    actual, _ = compiled.rollout(wm, actor, critic, seed)
+    torch.testing.assert_close(actual, expected)
+    expected_grad = torch.autograd.grad(expected.sum(), tuple(actor.parameters()))
+    actual_grad = torch.autograd.grad(actual.sum(), tuple(actor.parameters()))
+    for actual, expected in zip(actual_grad, expected_grad):
+      torch.testing.assert_close(actual, expected)
+    graph_counts.append(len(graphs))
+  # Replay seeds are detached; subsequent imagined states carry gradients.
+  # Both input variants may compile, but changing rewards must add no graphs.
+  assert 1 <= graph_counts[0] <= 2
+  assert all(count == graph_counts[0] for count in graph_counts)
+
+
 def test_reject_incompatible_legacy_checkpoint_and_invalid_replay_config(tmp_path):
   path = tmp_path / "legacy.pt"
   torch.save({"actor": {}}, path)

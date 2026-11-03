@@ -44,7 +44,7 @@ class TrainCfg:
   horizon: int = 32
   imag_batch: int = 2048
   compile_imagination: bool = False
-  """Compile the imagined step; best used while reward settings stay fixed."""
+  """Compile the imagined step, including scheduled rewards held on device."""
   matmul_precision: str = "high"
   critic_epochs: int = 3
   critic_minibatches: int = 4
@@ -183,8 +183,8 @@ class Trainer:
       iteration, cfg.reward_curriculum_start, cfg.reward_curriculum_end)
     task = training_task(self.env.cfg.task, self.reward_fraction)
     self.imag.task = task
-    # Changing Python reward coefficients each iteration would recompile the graph.
-    self.imag.use_compiled_step = self.reward_fraction in (0.0, 1.0)
+    if cfg.compile_imagination:
+      self.imag.update_reward_parameters()
     # Reward terms read the live task as well as their manager weights.
     self.env.training_task = task
     for name in self.env.cfg.task.rewards.__dataclass_fields__:

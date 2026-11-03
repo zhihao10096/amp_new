@@ -62,3 +62,21 @@
 
 - 非编译主训练已在边界保存停止，最新checkpoint=logs/supermimic/2026-11-03_23-14-56_505712_manager_baseline_squared/model_1522.pt；启动7指令×4env×8秒早期真实步态诊断PID2392032，日志logs/manager_4090/baseline_squared_early_gait.log。该模型仅初期奖励，不作最终验收。
 - 编译实现完整验证通过：CPU30项、CUDA FP32前后返回/梯度一致、真实32env三网络更新与课程切换、保存及恢复20→24；无PhysX/CUDA错误。准备提交后按相同model1522比较完整训练的并行配置，编译初次耗时单独记录。
+
+- model1522早期7指令诊断结束，前进1m/s实际vx=0.00453，还未恢复有效前进；报告baseline_squared_early_gait.json。编译实现已提交8cb89bb，开始8192env/collect4/FP32编译完整100次更新吞吐实验PID2393181，日志compiled_profile8192.log，从model1522同起点对比。
+
+- 8192编译100更新完成：稳定约10.4万真实样本/s、3.16迭代/s；零PhysX/CUDA错误，model1622保存，原非编译8192约6.1万/1.86。开始同model1522起点16384env/collect2对比PID2395620，日志logs/manager_4090/compiled_profile16384.log，其余WM/imag/buffer和每轮32768采样不变。
+
+- 16384env/collect2编译100更新完成，约11.9万样本/s、3.65迭代/s，比8192编译约快15%，峰值17.5GB且零物理错误。继续测试32768env/collect1/buffer128（回放总容量及每轮32768真实样本与16k相同，单环境回放缩至2.56s），PID2397992，日志logs/manager_4090/compiled_profile32768.log；根据实测效率及学习质量选配置。
+- 32768env/collect1/buffer128完整100更新零物理错误，稳定约12.5万样本/s、3.82迭代/s、峰值21728MiB，较非编译8192约2.1倍；三个配置对照报告compiled_profiles.json。采用32k继续同Manager随机来源model1622至3000，PID2401448，日志logs/manager_4090/baseline_squared_fast.log；单环境回放2.56秒，实际学习效果仍须验证。
+- 主训练继续期间，按d9eee9b3中已存在的接触优先/稀有窗口存档准备下一项受控对照：新增默认关闭的WM采样选项及有容量上限的archive，尚未用于正式训练；当前32k主进程仍是已提交8cb89bb均匀采样。CPU验证日志priority_cpu.log，若3000仍停滞，再完成GPU验证并决定是否试用，不混改正在评估的训练。
+- 新平方奖励/编译32k训练2100：真实linear_error从1700的.699降到.610，出现首次明显改善，model2000已保存；尚无新独立速度评估，保持单一训练路线至3000。候选接触优先/存档CPU33项通过但不启用；避免混入新因素影响判断。
+
+- 到2300，真实linear_error已降至.402（2100为.610），说明当前路线开始学习运动。为保持实验单一，已将未启用的接触优先采样候选移出源码，备份logs/manager_4090/priority_candidate/priority.patch及测试；CPU33项仅为候选验证，正式代码恢复为8cb89bb（原CPU30项）。不启用额外采样方案。
+- 初期平方奖励路线至3000完成，最后训练linear_error=.16393/yaw=.12427，零PhysX/CUDA错误，恢复运动学习；checkpoint=2026-11-03_23-40-16_677008_manager_baseline_squared_fast/model_3000.pt。启动完整速度20固定+3随机种子/30秒及7指令8重复20秒步态评估，进程见baseline_squared_eval3000.process.json；本轮奖励比例0，尚不能最终验收。
+- model3000完整7指令步态评估完成：各轴速度RMSE全达标、各组零摔倒，1m/s实际vx=.99854；仍小碎步（步频6.087Hz、腾空.0422秒、离地.00664m、足滑.2857m/s），明确下一阶段是渐进最终步态奖励。完整20固定+3随机种子速度评估仍在运行，不能宣布最终收敛。
+- 为避免2000次渐进权重阶段退回非编译执行，已将可选编译路径的奖励系数/关节公式混合比例改为GPU张量参数；真实manager仍读取同一当期浮点配置。新增CPU验证5个课程比例的返回/梯度与普通路径一致且只编译一张图，日志dynamic_reward_cpu.log。该实现尚未提交/用于正式训练，需CUDA及真实更新/恢复验证。
+- model3000完整速度评估velocity_failures=[]：20固定+3随机种子全部阈值通过，随机稳态平均RMSE约(.0566,.0701,.0561)，随机摔倒1/2/0次，仍需最终步态及连续三检查点验收。GPU张量奖励实现CPU初次仅图数量断言失败（实际初始seed不带梯度、后续状态带梯度有两个合法图；返回/梯度已一致），改为检验各课程比例不增加编译图。启动CUDA中间比例一致性与真实32env更新/课程切换，进程见dynamic_reward.process.json。
+
+- GPU张量奖励系数验证：CPU31项PASS，5个课程比例返回/梯度一致且复用同一组梯度输入图；CUDA中间比例actor梯度最大差2.98e-8；真实32env初中末课程更新/保存PASS。开始CLI恢复20→24 PID2417071，日志logs/manager_4090/dynamic_reward_resume.log。完成后提交并从model3000按3000→5000渐进最终权重、actor_scale=.15继续训练。
+- 动态GPU奖励参数验证完成：CPU31项、CUDA中间比例返回/梯度一致、真实32env课程前中后更新/保存及CLI恢复20→24通过，全日志零物理/CUDA错误。计划提交后从Manager model3000开始3000→5000最终步态课程，actor_scale降至.15，保持32k/WM4096×4/imag8192/H32/FP32编译。

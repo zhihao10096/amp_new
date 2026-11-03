@@ -57,7 +57,13 @@ SuperMimic 学习流程，并在新环境中训练、验证速度跟踪和步态
 model2025在有效8192配置下续训仍未改善静止策略。当前验证弱正则速度学习后逐步引入最终步态奖励，目标任务和预定验收阈值不变；审计拒绝调度未完成的checkpoint。
 
 正式训练仍只接受Manager随机初始化来源；本轮拟从原model1000未更新的随机actor与已预热世界模型继续，初始证据仍为原model0。原始目录 `logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/`。
-**新Manager环境尚无收敛证据。** 历史Direct结果不能代替新环境验收。
+**新Manager速度跟踪已通过完整覆盖，最终步态和三检查点收敛验收尚未完成。** 历史Direct结果不能代替新环境验收。
+
+本轮Manager随机来源model3000（`2026-11-03_23-40-16_677008_manager_baseline_squared_fast`）
+通过20固定+3随机种子完整速度阈值；随机稳态平均RMSE为(.0566,.0701,.0561)。
+7指令速度达标且零摔倒，但1m/s步频6.087Hz、腾空.0422秒、足滑.2857m/s，
+仍未达最终步态标准。当前保留原定标准，准备渐进最终奖励；
+证据 `logs/manager_4090/baseline_squared_velocity3000.json` / `baseline_squared_gait3000.json`。
 
 完整审计命令：
 

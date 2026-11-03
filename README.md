@@ -98,8 +98,8 @@ python scripts/train.py --headless --num-envs 8192 --wm-batch 4096 \
 ```
 
 可用 `--compile-imagination --matmul-precision highest` 编译想象单步，减少 Python
-启动 GPU kernel 的开销；沿用原始基线的做法。课程权重插值时自动切回普通路径，
-固定初期/最终权重时启用编译。首次编译耗时应与后续稳定吞吐分开统计。
+启动 GPU kernel 的开销；沿用原始基线的做法。奖励系数和公式混合比例使用设备张量，
+课程权重插值时也复用编译图。首次编译耗时应与后续稳定吞吐分开统计。
 FP32 返回和 actor 梯度已实测一致；TF32 的累计舍入不同，因此本轮编译训练使用 highest。
 
 训练日志包含真实/想象转移吞吐。`--stop-file <path>` 可在该文件出现时保存并在迭代边界

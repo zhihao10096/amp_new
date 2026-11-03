@@ -20,6 +20,7 @@ def main():
   parser.add_argument("--batch", type=int, default=128)
   parser.add_argument("--horizon", type=int, default=8)
   parser.add_argument("--output", required=True)
+  parser.add_argument("--fraction", type=float)
   args = parser.parse_args()
   # Compare the compiler itself without different TF32 rounding accumulating
   # through recurrent dynamics and the actor's observation history.
@@ -29,7 +30,8 @@ def main():
   checkpoint = load_checkpoint(args.checkpoint, device)
   task = task_from_dict(checkpoint["task_cfg"])
   task.observation_noise = False
-  task = training_task(task, checkpoint.get("reward_curriculum_fraction", 1))
+  fraction = checkpoint.get("reward_curriculum_fraction", 1) if args.fraction is None else args.fraction
+  task = training_task(task, fraction)
   actor = Actor(checkpoint["obs_dim"], tuple(checkpoint["cfg"]["actor_hidden"])).to(device)
   critic = Critic(CRITIC_DIM, tuple(checkpoint["cfg"]["critic_hidden"])).to(device)
   wm = WorldModel(tuple(checkpoint["cfg"]["wm_hidden"])).to(device)
