@@ -85,12 +85,14 @@ def test_imagination_backpropagates_to_actor_with_frozen_dynamics_and_critic():
   torch.testing.assert_close(targets[:, 1], data["rewards"][:, 1])
 
 
-def test_critic_warmup_updates_critic_without_retaining_actor_rollout_graph():
+@pytest.mark.parametrize("real_fraction", [0., .5, 1.])
+def test_critic_warmup_updates_critic_without_retaining_actor_rollout_graph(real_fraction):
   from go2_supermimic.amp import AMPDiscriminator
 
   torch.manual_seed(71)
   trainer = Trainer.__new__(Trainer)
-  trainer.cfg = TrainCfg(imag_batch=4, horizon=3, critic_epochs=1, critic_minibatches=1)
+  trainer.cfg = TrainCfg(imag_batch=4, horizon=3, critic_epochs=1, critic_minibatches=1,
+                         critic_real_fraction=real_fraction)
   trainer.device = "cpu"
   trainer.wm = WorldModel((16,))
   trainer.wm.out_norm.var.fill_(1e-4)
@@ -106,12 +108,21 @@ def test_critic_warmup_updates_critic_without_retaining_actor_rollout_graph():
   seed = {"s": standing(4), "a_prev": torch.zeros(4, 12),
           "obs": torch.randn(4, v.FRAME_DIM * 2), "commands": torch.ones(4, 3),
           "command_time": torch.full((4,), 10.), "gait": torch.zeros(4, v.GAIT_DIM)}
-  trainer.buf = SimpleNamespace(sample_states=lambda _: seed)
+  trainer.buf = ReplayBuffer(4, 4, v.FRAME_DIM * 2, "cpu")
+  trainer.buf.add(
+    seed["s"], seed["s"], seed["a_prev"], seed["a_prev"], seed["obs"],
+    seed["commands"], seed["command_time"], torch.zeros(4, dtype=torch.bool), seed["gait"])
+  trainer.real_env_ids = torch.arange(4)
+  trainer.real_generator = torch.Generator().manual_seed(3719)
   grad_modes = []
   trainer.actor.register_forward_pre_hook(lambda *_: grad_modes.append(torch.is_grad_enabled()))
   initial_actor = [p.detach().clone() for p in trainer.actor.parameters()]
   initial_critic = [p.detach().clone() for p in trainer.critic.parameters()]
   stats = trainer.improve_policy(update_actor=False)
+  if real_fraction:
+    assert stats["critic_real_fraction"] == real_fraction
+  else:
+    assert "critic_real_fraction" not in stats
   assert grad_modes == [False] * 3 and stats["actor_grad_norm"] == 0
   assert all(torch.equal(a, b) for a, b in zip(initial_actor, trainer.actor.parameters()))
   assert any(not torch.equal(a, b) for a, b in zip(initial_critic, trainer.critic.parameters()))

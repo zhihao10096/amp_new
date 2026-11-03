@@ -50,6 +50,8 @@ class TrainCfg:
   matmul_precision: str = "high"
   critic_epochs: int = 3
   critic_minibatches: int = 4
+  critic_real_fraction: float = 0.
+  """Replace this fraction of imagined critic targets by real one-step TD."""
   lr: float = 2e-4
   actor_lr_scale: float = 0.3
   actor_ramp_iterations: int = 500
@@ -97,6 +99,8 @@ class TrainCfg:
       raise ValueError("critic_minibatches exceeds the imagined transition count")
     if not 0 <= self.explore_frac <= 1:
       raise ValueError("explore_frac must be in [0, 1]")
+    if not 0 <= self.critic_real_fraction <= 1:
+      raise ValueError("critic_real_fraction must be in [0, 1]")
     if self.continue_run and not self.resume:
       raise ValueError("continue_run requires resume")
     if self.warm_start and self.resume:
@@ -182,6 +186,11 @@ class Trainer:
       env.cfg.task, env.consts, amp=self.amp)
     self.ou = torch.zeros(cfg.num_envs, api.NUM_JOINTS, device=self.device)
     self.explore = torch.arange(cfg.num_envs, device=self.device) < int(cfg.explore_frac * cfg.num_envs)
+    if cfg.critic_real_fraction:
+      self.real_env_ids = (~self.explore).nonzero(as_tuple=True)[0]
+      if not len(self.real_env_ids):
+        self.real_env_ids = torch.arange(cfg.num_envs, device=self.device)
+      self.real_generator = torch.Generator(device=self.device).manual_seed(cfg.seed + 3719)
     self.start_it = self.env_steps = 0
     self.training_origin = {
       "kind": "random_initialization", "seed": cfg.seed,
@@ -252,6 +261,8 @@ class Trainer:
       self.opt_amp.load_state_dict(ckpt["opt_amp"])
       for group in self.opt_amp.param_groups:
         group["lr"] = self.cfg.amp_lr
+    if self.cfg.critic_real_fraction and "real_critic_rng_state" in ckpt:
+      self.real_generator.set_state(ckpt["real_critic_rng_state"].cpu())
     if self.cfg.continue_run:
       self.start_it, self.env_steps = ckpt["iteration"], ckpt["env_steps"]
       self.env.common_step_counter = ckpt["sim_steps"]
@@ -385,6 +396,18 @@ class Trainer:
         model.requires_grad_(True)
     targets = self.imag.gae_targets(self.critic, data).reshape(-1)
     inputs = data["critic_in"][:, :-1].reshape(-1, self.imag.critic_dim)
+    real_stats = {}
+    count = int(len(inputs) * self.cfg.critic_real_fraction)
+    if count:
+      physical = self.buf.sample_transitions(count, self.real_env_ids, self.real_generator)
+      real_inputs, real_targets = self.imag.real_targets(self.critic, physical)
+      count = len(real_inputs)
+      # Preserve the critic's total sample/update budget, even when command
+      # expiries leave fewer eligible real targets than requested.
+      inputs = torch.cat((inputs[count:], real_inputs))
+      targets = torch.cat((targets[count:], real_targets))
+      real_stats = {"critic_real_fraction": count / len(inputs),
+                    "critic_real_target_mean": real_targets.mean().item() if count else 0.}
     self.critic.norm.update(inputs)
     losses = []
     for _ in range(self.cfg.critic_epochs):
@@ -393,7 +416,7 @@ class Trainer:
         loss = (self.critic(inputs[selected]).squeeze(-1) - targets[selected]).square().mean()
         self._update(loss, self.critic, self.opt_critic)
         losses.append(loss.item())
-    return {"imagined_return": objective.mean().item(), "actor_grad_norm": norm,
+    return {**real_stats, "imagined_return": objective.mean().item(), "actor_grad_norm": norm,
             "critic_loss": sum(losses) / len(losses),
             "imagined_survival": data["survival"][:, -1].mean().item()}
 
@@ -411,6 +434,8 @@ class Trainer:
                 "critic": self.critic.state_dict(), "world_model": self.wm.state_dict(),
                 "opt_actor": self.opt_actor.state_dict(), "opt_critic": self.opt_critic.state_dict(),
                 "opt_wm": self.opt_wm.state_dict()}
+    if self.cfg.critic_real_fraction:
+      payload["real_critic_rng_state"] = self.real_generator.get_state()
     if self.amp is not None:
       payload.update(amp=self.amp.state_dict(), opt_amp=self.opt_amp.state_dict(),
                      amp_motion_metadata=self.env.amp_motion.metadata,

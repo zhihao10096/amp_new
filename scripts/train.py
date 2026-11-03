@@ -33,7 +33,7 @@ def main():
     values = restore_curriculum_options(values, resume_checkpoint["cfg"], sys.argv[1:])
     supplied = {x.split("=", 1)[0] for x in sys.argv[1:]}
     for name in values:
-      if (name == "task" or name.startswith("amp_")) and (
+      if (name in ("task", "critic_real_fraction") or name.startswith("amp_")) and (
           "--" + name.replace("_", "-") not in supplied):
         values[name] = resume_checkpoint["cfg"].get(name, values[name])
   if values["task"] == "A1-AMP-Flat" and not values["amp_motion_files"]:

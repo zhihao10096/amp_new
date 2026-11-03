@@ -61,6 +61,12 @@ G1是29维动作、480维策略历史、83维世界模型状态和8维足端计�
 显式`--amp-lr`会覆盖保存的D优化器学习率。G1第二轮按上游[Issue 28](https://github.com/zitongbai/legged_lab/issues/28)
 减慢D更新以缓解饱和；实际配置和独立结果仍以STATUS/G1_CONVERGENCE为准。
 
+可选`--critic-real-fraction 0.5`在固定critic样本预算内混合真实一步TD与想象TD(λ)，
+actor仍只通过世界模型的可微想象更新。默认0；CLI恢复自动继承，显式参数可覆盖。
+真实目标使用终止前状态和gait，摔倒不bootstrap、超时保留bootstrap，跳过恰好切换命令
+的非终止转移；从非OU环境取样（没有时回退全部），独立采样RNG随检查点保存恢复。
+这是待做闭环消融的实验选项；接口通过不能证明它改善行走，正式采用状态见STATUS。
+
 G1独立成功后进入X1：参考reference/AMP，仅下半身12DOF进入策略输出；X1参考动作
 复制到项目后用.gitignore忽略，来源/SHA256/split清单仍纳入Git。部署相关配置以该
 参考项目为依据，核对关节顺序、默认位姿、动作比例、PD、观测历史和控制周期；按用户要求跳过RKNN相关代码。

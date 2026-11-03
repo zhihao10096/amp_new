@@ -100,3 +100,34 @@ class Imagination:
         (1 - cfg.lam) * values[:, t + 1] + cfg.lam * following)
       targets[:, t] = following
     return targets
+
+  @torch.no_grad()
+  def real_targets(self, critic, batch: dict[str, torch.Tensor]
+                   ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Anchor V to actual transitions; time limits still bootstrap.
+
+    The shared fall predicate identifies genuine termination. A nonterminal
+    command expiry is excluded because replay does not store the new command.
+    All next-state and gait calculations precede the simulator's auto-reset.
+    """
+    api, cfg, task = self.api, self.cfg, self.task
+    before, after = batch["s"], batch["next_s"]
+    death = api.terminated(after, task)
+    reward, _ = api.reward(
+      before, after, batch["action"], batch["a_prev"], batch["commands"],
+      self.consts, task, cfg.dt, death, batch["gait"])
+    if self.amp is not None:
+      reward = reward + self.amp_weight * cfg.dt * self.amp.reward(
+        before, after, self.consts.default_q, batch["commands"])
+    next_gait, _ = api.advance_gait(
+      batch["gait"], before[:, api.CONTACT], after[:, api.CONTACT], cfg.dt)
+    keep = (batch["command_time"] > cfg.dt) | death
+    inputs = self.critic_input(
+      before, batch["a_prev"], batch["commands"], batch["command_time"], batch["gait"])[keep]
+    following = self.critic_input(
+      after, batch["action"], batch["commands"],
+      (batch["command_time"] - cfg.dt).clamp(min=0), next_gait)[keep]
+    # Avoid a second full imagined-batch-sized critic activation allocation.
+    values = torch.cat([critic(part).squeeze(-1) for part in following.split(8192)])
+    targets = reward[keep] + cfg.gamma * (~death[keep]).float() * values
+    return inputs, targets

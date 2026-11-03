@@ -60,7 +60,13 @@ try:
                    - g1.frame_features(frames)).abs().max().item()
   assert expert_error < 1e-4, expert_error
   obs, _ = env.reset()
-  resets = falls = resamples = 0
+  resets = falls = resamples = timeouts = 0
+  real_td_max_error = 0.
+  real_anchor = Imagination(ImagineCfg(), cfg.task, env.consts, disc)
+
+  def context_value(x):
+    return (x[:, 0] + x[:, 83] + x[:, -9] + x[:, -8]).unsqueeze(-1)
+
   for step in range(100):
     weight = (0., .5, .17)[step % 3]
     term_cfg = env.reward_manager.get_term_cfg("amp_style")
@@ -80,6 +86,21 @@ try:
     style = disc.reward(before, state, env.consts.default_q, commands)
     torch.testing.assert_close(actual, base + weight * env.step_dt * style, atol=1e-5, rtol=1e-5)
     torch.testing.assert_close(extras["amp_style"], style)
+    real_anchor.amp_weight.fill_(weight)
+    batch = {"s": before, "next_s": state, "action": action, "a_prev": previous,
+             "commands": commands, "command_time": remaining, "gait": gait,
+             "done": term | trunc}
+    real_inputs, targets = real_anchor.real_targets(context_value, batch)
+    keep = (remaining > env.step_dt) | term
+    next_gait, _ = g1.advance_gait(
+      gait, before[:, g1.CONTACT], state[:, g1.CONTACT], env.step_dt)
+    following = torch.cat((state, action, commands,
+                            (remaining - env.step_dt).clamp(min=0)[:, None], next_gait), -1)
+    expected_target = (
+      actual + .99 * (~term).float() * context_value(following).squeeze(-1))[keep]
+    torch.testing.assert_close(targets, expected_target, atol=1e-5, rtol=1e-5)
+    real_td_max_error = max(real_td_max_error, (targets - expected_target).abs().max().item())
+    torch.testing.assert_close(real_inputs[:, :83], before[keep])
     done = term | trunc
     frame = g1.obs_frame(robot_state(env), env.actions, env.commands)
     expected = g1.push_history(history, frame, cfg.task.history)
@@ -90,8 +111,9 @@ try:
       assert g1.terminated(state, cfg.task)[term].all()
     resets += done.sum().item()
     falls += term.sum().item()
+    timeouts += (trunc & ~term).sum().item()
     resamples += ((remaining <= env.step_dt) & ~done).sum().item()
-  assert resets > 0 and falls > 0 and resamples > 0
+  assert resets > 0 and falls > 0 and resamples > 0 and timeouts > 0
   env.cfg.amp_reference_reset_fraction = 0.
   env.set_command((.6, 0., 0.))
   obs, _ = env.reset()
@@ -123,6 +145,7 @@ try:
   torch.testing.assert_close(gradients[0], gradients[1], atol=2e-5, rtol=2e-5)
   assert torch.isfinite(gradients[0]).all() and gradients[0].abs().sum() > 0
   result = {"passed": True, "robot_kind": "g1", "resets": resets, "falls": falls,
+            "timeouts": timeouts, "real_td_max_error": real_td_max_error,
             "command_resamples": resamples, "expert_feature_max_error": expert_error,
             "compile": args.compile, "return_max_error": (returned[0]-returned[1]).abs().max().item(),
             "gradient_max_error": (gradients[0]-gradients[1]).abs().max().item(),

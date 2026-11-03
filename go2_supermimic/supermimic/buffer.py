@@ -61,3 +61,19 @@ class ReplayBuffer:
     env = torch.randint(self.n, (batch,), device=self.device)
     idx = self._physical(torch.randint(self.size, (batch,), device=self.device))
     return self.s[env, idx], self.next_s[env, idx]
+
+  def sample_transitions(self, batch: int, env_ids: torch.Tensor | None = None,
+                         generator: torch.Generator | None = None) -> dict[str, torch.Tensor]:
+    """Sample physical transitions without replacing terminal states by resets."""
+    if not self.size or batch <= 0:
+      raise ValueError("need a nonempty replay and a positive transition batch")
+    if env_ids is None:
+      env_ids = torch.arange(self.n, device=self.device)
+    if not len(env_ids):
+      raise ValueError("need at least one eligible environment")
+    env = env_ids[torch.randint(len(env_ids), (batch,), device=self.device, generator=generator)]
+    idx = self._physical(torch.randint(self.size, (batch,), device=self.device, generator=generator))
+    return {"s": self.s[env, idx], "next_s": self.next_s[env, idx],
+            "action": self.a[env, idx], "a_prev": self.a_prev[env, idx],
+            "commands": self.commands[env, idx], "command_time": self.command_time[env, idx],
+            "gait": self.gait[env, idx], "done": self.done[env, idx]}
