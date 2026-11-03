@@ -2,7 +2,7 @@
   "source_repository": "https://github.com/zitongbai/legged_lab",
   "source_commit": "f33a18904e5209d9aceb95ef78ed82412c5f2072",
   "source_directory": "source/legged_lab/legged_lab/data/MotionData/g1_29dof/amp/walk_and_run",
-  "license": "Upstream README declares MIT; no standalone LICENSE file at this commit. Retargeted motion-specific upstream rights are not separately documented. See README.md.",
+  "license": "At the source commit, README.md declares MIT but the root LICENCE contains Apache-2.0. Both originals are retained; these declarations conflict. Retargeted motion-specific upstream rights are not separately documented. See README.md.",
   "quaternion": "WXYZ",
   "joint_order": "Isaac Lab breadth-first, listed in joint_names",
   "key_body_names": [
@@ -102,5 +102,19 @@
     "right_wrist_pitch_joint",
     "left_wrist_yaw_joint",
     "right_wrist_yaw_joint"
+  ],
+  "source_license_files": [
+    {
+      "source_file": "LICENCE",
+      "file": "UPSTREAM_LICENCE",
+      "declared_license": "Apache-2.0",
+      "sha256": "ff28cacaef7b9919a0fb905136cf4ccffba5191522bf5d024c4339932c0edc28"
+    },
+    {
+      "source_file": "README.md",
+      "file": "UPSTREAM_README.md",
+      "declared_license": "MIT",
+      "sha256": "65909d3b60d25158be586cd18e17f4e6592a4c2bf966ebb4e91929ad6cfa4eaf"
+    }
   ]
 }
