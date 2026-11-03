@@ -35,3 +35,17 @@ def test_g1_joint_deviation_curriculum_matches_final_reward():
   q = state[:, g1.Q]
   torch.testing.assert_close(initial["joint_deviation"], q.square().sum(-1))
   torch.testing.assert_close(final["joint_deviation"], q.abs().sum(-1))
+
+
+def test_g1_curriculum_disables_extra_walk_terms_early():
+  from go2_supermimic.supermimic.curriculum import training_task
+
+  target = g1.walk_task()
+  initial = training_task(target, 0.)
+  final = training_task(target, 1.)
+  assert initial.rewards.flight == 0.
+  assert initial.rewards.feet_distance == 0.
+  assert final.rewards.flight == target.rewards.flight
+  assert final.rewards.feet_distance == target.rewards.feet_distance
+  assert initial.joint_deviation_gait_fraction == 0.
+  assert final.joint_deviation_gait_fraction == target.joint_deviation_gait_fraction

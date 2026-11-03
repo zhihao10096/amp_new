@@ -23,6 +23,10 @@ INITIAL_WEIGHTS = {
   "feet_contact_without_command": 0.0,
   "gait_duration": 0.0,
   "diagonal_gait": 0.0,
+  # G1-specific walk terms should enter with the same gait curriculum instead
+  # of imposing a final flight/separation preference on a random policy.
+  "flight": 0.0,
+  "feet_distance": 0.0,
 }
 
 
@@ -49,6 +53,7 @@ def training_task(target: VelocityTaskCfg, fraction: float) -> VelocityTaskCfg:
   weights = {
     name: initial + fraction * (getattr(target.rewards, name) - initial)
     for name, initial in INITIAL_WEIGHTS.items()
+    if hasattr(target.rewards, name)
   }
   return replace(
     target, rewards=replace(target.rewards, **weights),
