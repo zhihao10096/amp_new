@@ -2,7 +2,7 @@
 
 ## 范围、版本与目录
 - 权威开发机`/pfs/user/learning/amp_new`，SSH `ssh -p 9205 root@118.196.87.69`；本地镜像`/home/user/Desktop/dream_codex_workspace/amp_new_src`。
-- 当前代码HEAD a909cd2bd935a0df9ee45a0bf5d7bbfdb6312351（a1-amp-training-ready-20261104）；本次补充A1完成文档，准备单独提交。A1实现52b35b6、Manager完成b1f59eb。
+- 当前交接commit由标签`a1-amp-handoff-20261104`定位（用`git rev-parse HEAD`核实）；A1完成结果37b6b5804750c661e503154cce0b17af4d37874e，训练源码a909cd2（a1-amp-training-ready-20261104）。A1实现52b35b6、Manager完成b1f59eb。
 - 完整目标：Manager已完成 → A1 AMP已完成 → 下一阶段G1 AMP平地walk；全部禁PPO，沿SuperMimic世界模型/可微想象。GOAL/PLAN保留范围、预算、数据入库与各阶段提交要求。
 - 保留未跟踪reference/及早期诊断exploration.py、explore_eval.py、dynamics_eval.py、test_exploration.py，勿误提交。
 
@@ -27,10 +27,11 @@
 - A1接触Head正则和原生USD/URDF几何差异已修复，专家/策略统一原生FK；编译测试随机重采样、零AMP权重日志缺失均已排除。早期失败smoke/性能模型不作正式训练来源。
 - G1预查：reference/legged_lab commit f33a189，29DOF本地USD/Walk_B*可用；样例252帧、fps29.910979，root_pos/rot、29关节位置和6关键体位置，无直接速度，四元数/关节顺序待GPU核对。默认flat混有run/转换，须显式walk白名单/plane，禁止PPO。
 - **G1实际使用的参考动作必须复制进assets/motions/g1等项目Git目录，记录来源commit/许可/SHA256/划分并随代码提交，训练/评估默认读取项目内副本。**
+- G1补充只读核对：原始pkl可直接pickle读取（不需joblib依赖），root_rot是WXYZ，dof_pos为29维Lab顺序，6关键体顺序见retarget/config/g1_29dof.yaml；参考代码目前按Lab v3 XYZW适配，不能直接导入本机Lab2.1。README标注MIT，树中未找到独立LICENSE，数据来源/许可须在复制时如实记录并核对。
 - RTX4090D24GB；.venv Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5。仿真清除PYTHONPATH，OMNI_KIT_ACCEPT_EULA=YES、OMNI_KIT_ALLOW_ROOT=1、TORCHINDUCTOR_COMPILE_THREADS=4。开发机无rg/系统python，使用.venv/bin/python。
 
 ## 未解决问题与下一条命令
-- A1数值/视觉/归档均完成，待本次阶段git提交；G1实现和独立验收尚未完成，不能称总目标完成。G1需核对本地数据及资产、设计原生29DOF状态/观测/AMP与可微想象接口，在正式训练前锁定指令/步态/速度/稳定性标准。
-- 下一条命令：`git diff --stat`，审查本次A1完成文档并只提交指定文件，保留reference及诊断文件。提交后读取reference/legged_lab的G1 flat/robot/motion实现及许可证，实施G1数据入库和接口。
+- A1数值/视觉/归档与阶段git提交均完成；G1实现和独立验收尚未完成，不能称总目标完成。G1需核对本地数据及资产、设计原生29DOF状态/观测/AMP与可微想象接口，在正式训练前锁定指令/步态/速度/稳定性标准。
+- 下一条命令：`git rev-parse HEAD && nvidia-smi && sed -n "1,180p" reference/legged_lab/scripts/tools/retarget/config/g1_29dof.yaml`。先核实状态，再实施G1数据入库和接口；本次尚未改动G1源码、复制G1动作或启动G1实验。
 
 历史：[A1验收过程](docs/history/STATUS_2026-11-04_a1_final_eval.md)、[A1训练过程](docs/history/STATUS_2026-11-04_a1_training_before_eval.md)、[A1实现](docs/history/PROGRESS_2026-11-04_a1_implementation.md)、[Manager](docs/history/PROGRESS_2026-11-04_manager.md)。
