@@ -7,6 +7,11 @@
 训练保留 SuperMimic 的模型学习方法：在 PhysX 中收集真实转移，拟合多步世界模型，
 再通过冻结的世界模型进行想象滚动，反向传播更新 actor，并用 TD(λ) 更新 critic。
 
+本机已训练并验证收敛模型：`checkpoints/go2_velocity_converged.pt`。第 3000、4000、
+5000 次检查点连续通过完整指令评估；第 5000 次模型随机指令稳态 RMSE 为
+vx / vy / yaw-rate = **0.048 / 0.032 / 0.039**，独立标准/带噪声评估均零摔倒。
+模型和录像保留在本地，详见 [收敛验证记录](CONVERGENCE.md)。
+
 ## 环境与安装
 
 验证版本：Python 3.10、Isaac Lab 2.1.0、Isaac Sim 4.5.0、Torch 2.5.1，CUDA GPU。
@@ -66,6 +71,16 @@ python scripts/eval.py --headless --checkpoint logs/supermimic/<run>/model_1000.
   --command 0.8 0 0.3 --num-envs 1 --seconds 10 --video videos/velocity.mp4
 ```
 
+完整指令覆盖评估（20 种固定指令，加 3 个随机种子；同时输出完整误差与去除切换/重置后
+1 秒过渡的稳态误差）：
+
+```bash
+python scripts/benchmark.py --headless --checkpoints <model.pt> \
+  --output logs/convergence/benchmark.json --seconds 30 --repeats 8 \
+  --seeds 42 123 2026
+# 加 --observation-noise 可评估训练时的传感器噪声。
+```
+
 不带 `--headless` 可打开 Isaac Sim 窗口。评估关闭观测噪声，随机种子默认 42；固定
 指令在 episode 重置后继续生效。计时截断和摔倒分别统计，RMSE 覆盖全部采样步骤。
 
@@ -94,9 +109,10 @@ go2_supermimic/
   velocity.py       共用的纯 Torch 指令、观测、奖励、终止及电机模型
   env/              Isaac Lab 配置、任务注册和 DirectRLEnv
   supermimic/       状态适配、回放、世界模型、想象滚动和训练器
-scripts/            train.py、eval.py
-tests/             不依赖模拟器的数值与梯度回归测试
+scripts/            train.py、eval.py、benchmark.py
+tests/              数值/梯度回归测试及显式 GPU 集成检查
 PROGRESS.md         迁移进度及实际验证记录
+CONVERGENCE.md      收敛标准、测量结果及本地模型位置
 ```
 
 采用 MIT 许可证（见 [LICENSE](LICENSE)）。训练方法参考

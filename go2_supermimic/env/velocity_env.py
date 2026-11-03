@@ -85,7 +85,7 @@ class Go2VelocityEnv(DirectRLEnv):
     self.previous_actions[env_ids] = 0
     self.history[env_ids] = 0
     commands, remaining = v.sample_commands(len(env_ids), self.device, self.cfg.task.commands)
-    self.commands[env_ids] = commands if self.fixed_command is None else self.fixed_command
+    self.commands[env_ids] = commands if self.fixed_command is None else self.fixed_command[env_ids]
     self.command_time[env_ids] = remaining
     root = self.robot.data.default_root_state[env_ids].clone()
     root[:, :3] += self.scene.env_origins[env_ids]
@@ -99,8 +99,14 @@ class Go2VelocityEnv(DirectRLEnv):
     self.robot.write_joint_state_to_sim(joint_pos, torch.zeros_like(joint_pos), env_ids=env_ids)
 
   def set_command(self, command):
-    """Hold a specified (vx, vy, yaw-rate) command, including after resets."""
-    self.fixed_command = torch.as_tensor(command, device=self.device, dtype=torch.float32)
-    if self.fixed_command.shape != (3,):
-      raise ValueError("command must contain vx, vy and yaw rate")
-    self.commands[:] = self.fixed_command
+    """Hold one command or one per environment; None restores random sampling."""
+    if command is None:
+      self.fixed_command = None
+      return
+    values = torch.as_tensor(command, device=self.device, dtype=torch.float32)
+    if values.shape == (3,):
+      values = values.expand(self.num_envs, -1)
+    if values.shape != (self.num_envs, 3) or not torch.isfinite(values).all():
+      raise ValueError("command must be finite, with shape (3,) or (num_envs, 3)")
+    self.fixed_command = values.clone()
+    self.commands[:] = values

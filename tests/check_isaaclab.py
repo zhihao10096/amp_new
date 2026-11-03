@@ -69,8 +69,18 @@ try:
   for _ in range(15):
     obs, _, _, _, extras = env.step(torch.zeros(16, 12, device=env.device))
     torch.testing.assert_close(env.commands, env.fixed_command.expand(16, -1))
+  batch = torch.zeros(16, 3, device=env.device)
+  batch[:, 0] = torch.linspace(-1, 1.5, 16, device=env.device)
+  env.set_command(batch)
+  for _ in range(15):
+    env.step(torch.zeros(16, 12, device=env.device))
+    torch.testing.assert_close(env.commands, batch)
+  env.set_command(None)
+  env.reset()
+  assert env.fixed_command is None
+  assert not torch.equal(env.commands, batch)
   print(f"PASS: observation/reward parity, {resets} resets, {falls} falls, "
-        f"{resamples} command resamples, fixed command survives resets", flush=True)
+        f"{resamples} command resamples, single/batched commands survive resets", flush=True)
 finally:
   if env is not None:
     env.close()

@@ -1,37 +1,39 @@
-# Isaac Lab 速度跟踪迁移
+# Go2 Isaac Lab 速度跟踪：当前进度
 
-## 目标与当前状态
-用户授权在当前仓库迁移到 Isaac Lab，改为 Go2 速度跟踪，删除小球追踪与避障任务，可提交 Git 和启动训练验证。
-代码迁移、CPU/GPU 集成检查、2000 次训练及恢复、独立速度评估和带速度读数的录像均完成，已完成提交前审查。
+## 当前目标与结果
+- 用户最初授权迁移到 Isaac Lab、删除追球/避障任务、可 Git 提交及启动训练；迁移已提交 `4ca881b`。
+- 用户随后要求“继续训练直到任务收敛”。已完成：第 3000、4000、5000 次检查点连续通过预先记录的完整指令验收；第 5000 次模型的带训练噪声复测也通过。
+- 收敛模型已复制至 `checkpoints/go2_velocity_converged.pt`，与原始 model_5000.pt SHA-256 一致。训练在评估期间继续至 6200 次附近，确认达标后发送 SIGINT 正常关闭；所有训练、评估和录像进程已退出。
+- 最后工作：提交新增 benchmark、批量指令接口和收敛记录；不提交模型/录像/日志。
 
-## 实现与依据
-- 唯一任务 `Go2-Velocity-Flat`，使用 Isaac Lab DirectRLEnv、官方 Go2 USD、PhysX 平地、DC motor 位置控制；200 Hz 物理、50 Hz 控制。
+## 当前实现
+- `Go2-Velocity-Flat`，Isaac Lab DirectRLEnv、官方 Go2 USD、PhysX 平地、200 Hz 物理 / 50 Hz 控制。
 - 保留 SuperMimic：真实采样 → 多步世界模型拟合 → 想象 BPTT 更新 actor / TD(λ) 更新 critic。
-- 机体系 `(vx, vy, yaw_rate)` 指令每 6–10 秒重采样，10% 站立；actor 225 维历史观测，模型 34 维状态。
-- `velocity.py` 是纯 Torch 的共用观测/奖励/指令/终止实现。已核对 Isaac Lab v2.1.0 官方 GitHub 示例与本机源码：自动重置在 rewards 与 observations 之间，因此在 rewards 阶段保存终止 next_state；回放保留终止转移并屏蔽后续跨 episode 步。
-- 已删除旧 target、避障/地形任务、MuJoCo 模型、旧策略、旧演示、旧 driver/viz 和相关测试；依赖及 README/AGENTS.md 同步更新。检查点格式 `isaaclab_velocity_v1`，明确拒绝旧格式。
+- 机体系指令范围 vx [-1,1.5] m/s、vy [-0.6,0.6] m/s、yaw [-1,1] rad/s，每 6–10 秒切换，10% 站立。actor 225 维历史观测，模型 34 维状态。
+- 共享纯 Torch 观测/奖励/指令/终止，回放显式保存重置前 next_state、屏蔽跨 episode 步；旧追球/避障、MuJoCo 模型和策略已移除。
+- 新增 `scripts/benchmark.py`：20 种固定指令（含混合和边界），以及 42/123/2026 三随机种子；支持训练传感器噪声。
 
-## 本机环境及排查
-- RTX 4070 Ti SUPER 16 GB。项目初始 .venv 只有 Python 3.10 / Torch 2.7，无 Isaac Lab/Sim；已在该 .venv 安装 Isaac Lab 2.1.0 + Isaac Sim 4.5.0，按其约束使用 Torch 2.5.1 / NumPy 1.26.4，其他项目未修改。
-- 安装复用了本机缓存，`pip check` 无依赖问题。
-- shell 的 PYTHONPATH 注入 ROS pytest 插件，导致无关 `lark` 缺失；验证使用 `env -u PYTHONPATH` 隔离，无需改动 ROS。
-- 首次 RTX 录像初始化/着色器编译较慢；已确认不是训练阻塞。运行模拟器时设置 `OMNI_KIT_ACCEPT_EULA=YES`。
+## 收敛依据
+- 查看后续检查点前已记录标准：随机稳态 vx/vy/yaw RMSE <= (0.20,0.15,0.15)，摔倒率 <=0.1 次/机器人/分钟；每个固定用例 RMSE <=(0.30,0.25,0.25)，站立 <=(0.10,0.10,0.10)，固定组总摔倒率 <=0.1，单用例 <=0.5。
+- 每检查点评估 20 指令 × 8 环境 × 30 秒，加 160 环境 × 3 随机种子 × 30 秒；每轮 320 机器人分钟。稳态剔除切换/重置后 1 秒，完整 RMSE 和摔倒仍覆盖全部步骤。
+- 3000：随机稳态 RMSE (0.065,0.049,0.063)，随机种子各自摔倒率 0.0375/0.05/0，固定组零摔倒，全部用例达标。
+- 4000：随机稳态 RMSE (0.067,0.040,0.049)，随机/固定全部零摔倒，全部用例达标。
+- 5000：随机稳态 RMSE **(0.048,0.032,0.039)**，完整 **(0.155,0.073,0.076)**；固定/随机共 320 机器人分钟零摔倒。
+- 5000 带噪声：随机稳态 RMSE **(0.052,0.035,0.061)**，完整 **(0.163,0.075,0.090)**；另 320 机器人分钟零摔倒，各固定用例达标。
+- 三检查点误差范围 (0.0193,0.0168,0.0237)，无性能退化；最终完整标准见 `CONVERGENCE.md` 和机器可读报告。
+- 最终录像 10 秒、960×540、25 fps、250 帧，指令 (1,0,0.5)，平均实测 (0.964,0.028,0.502)，零摔倒；已抽帧检查运动和目标/实际速度读数。
 
-## 验证结果
-- `env -u PYTHONPATH .venv/bin/python -m pytest tests -q`：**10 passed**。
-- `python -m compileall -q go2_supermimic scripts tests` 和 `git diff --check` 通过。
-- `tests/check_isaaclab.py --headless`：16 环境、80 次重置、1 次强制翻倒、80 次指令切换；完整观测/奖励与共用实现一致，终止状态和固定指令跨重置行为正确。
-- 32 环境 3 次迭代冒烟训练：世界模型及 actor/critic 更新、保存均通过。
-- 256 环境先训练 400 次，再 `--continue-run` 恢复至 **2000 次**，累计 **2,052,096** 次真实转移，全部完成、无非有限数值。验证恢复后 actor/critic/world model 参数均继续变化，计数和优化器状态正确。
-- 最终检查点所有模型张量有限、三组优化器状态齐全，迭代/观测尺寸正确。
-- 64 环境 × 30 秒独立随机指令评估：vx / vy / yaw-rate RMSE 为 **0.652 m/s / 0.292 m/s / 0.165 rad/s**，6 次摔倒，**0.1875 次/机器人/分钟**。早期策略仍需更长训练，不能视为收敛。
-- 最终录像已完成并抽帧检查：960×540、25 fps、125 帧、5 秒，目标/实际速度读数与 Go2/平地画面正常。固定指令 (0.8, 0, 0.3) 下零摔倒，yaw RMSE 0.0694 rad/s、vx RMSE 0.760 m/s；已学到转向响应，前进跟踪仍需训练。
+## 验证与本机环境
+- Python 3.10、Isaac Lab 2.1.0、Isaac Sim 4.5.0、Torch 2.5.1、NumPy 1.26.4；RTX 4070 Ti SUPER 16 GB。
+- 10 项 CPU 单测通过；PhysX 集成测试含 80 次 reset、1 次强制翻倒、80 次指令切换及单/批量指令跨 reset 保持。
+- `pip check`、compileall、Git whitespace 检查通过。最新检查点模型张量全部有限，模型、归一化器、优化器状态齐全。
+- shell 的 PYTHONPATH 注入 ROS 导致原始 pytest 缺少无关 lark；使用 `env -u PYTHONPATH` 隔离解决，无需改动 ROS。
+- 首次 RTX 初始化/着色器编译较慢，已等到输出正常；未误判为训练阻塞。
 
 ## 本地生成物（均不提交）
-- 检查点：`logs/supermimic/2026-11-03_18-28-09_678706_velocity_resume_validation/model_2000.pt`
-- 训练日志：`/tmp/go2_velocity_training.log`、`/tmp/go2_velocity_resume.log`
-- 随机评估：`logs/validation/random_eval_2000.json`
-- 最终录像：`videos/velocity_validation.mp4`；指标 `logs/validation/video_eval_2000.json`。训练和评估进程均已正常结束。
-
-## 后续使用
-迁移及执行链路验证已完成。可从 model_2000.pt 使用 README 的 --resume / --continue-run 命令继续正式训练；当前策略尚未收敛。日志、视频、检查点和 .venv 不纳入 Git。
+- 模型：`checkpoints/go2_velocity_converged.pt`，元数据 `checkpoints/go2_velocity_converged.json`；迭代 5000，累计 14,348,288 真实转移。
+- 原始运行：`logs/supermimic/2026-11-03_18-48-14_562457_velocity_convergence/`，含 model_3000/4000/5000/6000.pt。
+- 训练日志：`logs/convergence/train.log`。
+- 原始评估：`logs/convergence/benchmark_3000.json`、`benchmark_4000.json`、`benchmark_5000.json`、`benchmark_5000_noisy.json`。
+- 审核报告：`logs/convergence/convergence_report.json`；生成脚本 `logs/convergence/report.py`；曲线 `logs/convergence/convergence.png`。
+- 演示：`videos/go2_velocity_converged.mp4`，指标 `logs/convergence/video_metrics.json`。
