@@ -83,6 +83,33 @@ def test_imagination_backpropagates_to_actor_with_frozen_dynamics_and_critic():
   torch.testing.assert_close(targets[:, 1], data["rewards"][:, 1])
 
 
+def test_compiled_imagination_preserves_returns_and_actor_gradients(monkeypatch):
+  """AOTAutograd must preserve credit through state, contacts and history."""
+  compile_step = torch.compile
+  monkeypatch.setattr(torch, "compile",
+                      lambda fn, **kw: compile_step(fn, backend="aot_eager", fullgraph=True, **kw))
+  torch.manual_seed(17)
+  task = v.VelocityTaskCfg(history=2, observation_noise=False)
+  wm = WorldModel((16,)).requires_grad_(False)
+  wm.out_norm.var.fill_(1e-4)
+  actor = Actor(v.FRAME_DIM * 2, (16,))
+  critic = Critic(CRITIC_DIM, (16,)).requires_grad_(False)
+  seed = {"s": standing(4), "a_prev": torch.zeros(4, 12),
+          "obs": torch.randn(4, v.FRAME_DIM * 2), "commands": torch.randn(4, 3),
+          "command_time": torch.ones(4) * 10, "gait": torch.ones(4, v.GAIT_DIM) * .1}
+  eager = Imagination(ImagineCfg(horizon=3), task, consts())
+  compiled = Imagination(ImagineCfg(horizon=3, compile=True), task, consts())
+  expected, expected_data = eager.rollout(wm, actor, critic, seed)
+  actual, actual_data = compiled.rollout(wm, actor, critic, seed)
+  torch.testing.assert_close(actual, expected)
+  for name in expected_data:
+    torch.testing.assert_close(actual_data[name], expected_data[name])
+  expected_grad = torch.autograd.grad(expected.sum(), tuple(actor.parameters()))
+  actual_grad = torch.autograd.grad(actual.sum(), tuple(actor.parameters()))
+  for actual, expected in zip(actual_grad, expected_grad):
+    torch.testing.assert_close(actual, expected)
+
+
 def test_reject_incompatible_legacy_checkpoint_and_invalid_replay_config(tmp_path):
   path = tmp_path / "legacy.pt"
   torch.save({"actor": {}}, path)

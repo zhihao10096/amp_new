@@ -44,7 +44,7 @@ def main():
     from go2_supermimic.env.env_cfg import Go2VelocityEnvCfg
     from go2_supermimic.supermimic.train import Trainer, load_checkpoint, task_from_dict
 
-    torch.set_float32_matmul_precision("high")
+    torch.set_float32_matmul_precision(cfg.matmul_precision)
     env_cfg = Go2VelocityEnvCfg()
     env_cfg.scene.num_envs = cfg.num_envs
     env_cfg.sim.device = args.device

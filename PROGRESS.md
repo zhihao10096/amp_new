@@ -49,3 +49,16 @@
 
 - 恢复验证PASS：model24三网络/优化器均更新且有限，CLI继承4/12调度和最终公式；开始32env/2秒评估PID2380247，日志logs/manager_4090/baseline_reward_eval.log；证据baseline_reward_regression.json。
 - 修正初期奖励的全链路验证完成：CPU29项、原生GPU接口、实际三网络更新/保存/CLI恢复及32env短评估均PASS，全日志零PhysX/CUDA错误；短评估仅证明可执行，不作收敛依据。准备提交修复后以8192env/collect4/WM4096×4/imag8192/buffer256从Manager随机初始化重训。
+- 修复提交a3ea68e；新正式来源从Manager随机初始化启动PID2381345（不resume/不warm-start），8192env/collect4/WM4096×4/imag8192/buffer256，300WM预热+200critic预热，首段至3000、每500保存。初期奖励保持至6000、9000达最终；先观察速度，不提前套最终约束。日志logs/manager_4090/baseline_squared_train.log，GPU监控PID2381346。
+- 已复核上一周期相位扫描112组：有7组前进>.2m/s且零摔倒；最佳1/1.5m/s指令实际vx约.389/.588，抬腿相位3π/2。该结果仅证明采样覆盖，不证明策略学习或跟踪收敛；保留为后备，当前先完成奖励基线对照，不混入训练。新随机来源model0已保存于2026-11-03_23-14-56_505712_manager_baseline_squared，训练初始化零物理错误。
+- 新随机训练到600：model500已保存，actor从501开始更新；WM预热约18.8万样本/s，actor阶段约6.08万样本/s、1.86迭代/s。当前速度误差约.697，仅早期更新，尚不能判定学习成功；下一阶段监测1500/2000及真实运动。
+- 针对4090D actor阶段平均GPU约44%的瓶颈，参考d9eee9b3的编译想象单步，新增默认关闭的compile_imagination选项。CPU30项通过，含AOT编译前后返回/轨迹/actor梯度一致；启动独立小批CUDA比较PID2386070，日志logs/manager_4090/compiled_imagination_cuda.log。正式训练仍运行a3ea68e的非编译实现，不受文件修改影响。
+
+- 编译GPU比较首轮在TF32 high下返回最大差约6.4e-4，严格一致性未通过；尚未用于正式训练。CPU AOT一致，当前检验FP32 highest是否消除累计舍入差，PID2388047，日志logs/manager_4090/compiled_imagination_fp32.log。正式训练model1000已保存，linear_error约.695。
+
+- FP32 highest下CUDA编译一致性PASS：actor梯度最大绝对差4.84e-8，128batch/H8单步链暖运行.0753→.0147秒（仅微基准，不代表训练加速）。编译仅在固定奖励阶段启用，课程插值期自动用普通路径避免逐轮重编译。启动真实32env更新/保存及课程切换烟测PID2388957，日志logs/manager_4090/compiled_imagination_smoke.log；最终CPU复验PID2388958。
+
+- 编译32env真实更新/课程切换/保存PASS、CPU30项PASS；恢复验证PID2391480，日志logs/manager_4090/compiled_imagination_resume.log。已请求当前非编译主训练在迭代边界保存停止，准备对比8192×4与16384×2采样配置（每轮真实样本同为32768）及编译吞吐，然后从同一随机来源继续。
+
+- 非编译主训练已在边界保存停止，最新checkpoint=logs/supermimic/2026-11-03_23-14-56_505712_manager_baseline_squared/model_1522.pt；启动7指令×4env×8秒早期真实步态诊断PID2392032，日志logs/manager_4090/baseline_squared_early_gait.log。该模型仅初期奖励，不作最终验收。
+- 编译实现完整验证通过：CPU30项、CUDA FP32前后返回/梯度一致、真实32env三网络更新与课程切换、保存及恢复20→24；无PhysX/CUDA错误。准备提交后按相同model1522比较完整训练的并行配置，编译初次耗时单独记录。

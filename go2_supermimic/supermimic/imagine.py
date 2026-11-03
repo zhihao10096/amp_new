@@ -15,18 +15,35 @@ class ImagineCfg:
   gamma: float = 0.99
   lam: float = 0.95
   dt: float = 0.02
+  compile: bool = False
 
 
 class Imagination:
   def __init__(self, cfg: ImagineCfg, task: v.VelocityTaskCfg, consts: v.RobotConsts):
     self.cfg, self.task, self.consts = cfg, task, consts
+    self._step_fn = torch.compile(self._step, dynamic=False) if cfg.compile else self._step
+    self.use_compiled_step = True
 
   @staticmethod
   def critic_input(s, previous_action, commands, remaining, gait):
     return torch.cat([s, previous_action, commands, remaining[:, None], gait], -1)
 
-  def rollout(self, wm, actor, critic, seed):
+  def _step(self, s, previous, history, commands, remaining, gait, wm, actor):
     cfg, task = self.cfg, self.task
+    critic_in = self.critic_input(s, previous, commands, remaining, gait)
+    action = actor(history).clamp(-task.action_clip, task.action_clip)
+    next_s = wm(s, action, previous)
+    death = v.termination_probability(next_s, task)
+    reward, _ = v.reward(s, next_s, action, previous, commands,
+                         self.consts, task, cfg.dt, death, gait)
+    gait, _ = v.advance_gait(gait, s[:, v.CONTACT], next_s[:, v.CONTACT], cfg.dt)
+    commands, remaining = v.advance_commands(commands, remaining, cfg.dt, task.commands)
+    frame = v.obs_frame(next_s, action, commands, task.observation_noise)
+    history = v.push_history(history, frame, task.history)
+    return next_s, action, history, commands, remaining, gait, reward, death, critic_in
+
+  def rollout(self, wm, actor, critic, seed):
+    cfg = self.cfg
     s, previous, history = seed["s"], seed["a_prev"], seed["obs"]
     commands, remaining = seed["commands"], seed["command_time"]
     gait = seed.get("gait", s.new_zeros(s.shape[0], v.GAIT_DIM))
@@ -34,23 +51,16 @@ class Imagination:
     objective = torch.zeros_like(survival)
     rewards, survivals, inputs, continuations = [], [survival], [], []
     discount = 1.0
+    step_fn = self._step_fn if self.use_compiled_step else self._step
     for _ in range(cfg.horizon):
-      inputs.append(self.critic_input(s, previous, commands, remaining, gait))
-      action = actor(history).clamp(-task.action_clip, task.action_clip)
-      next_s = wm(s, action, previous)
-      death = v.termination_probability(next_s, task)
-      reward, _ = v.reward(s, next_s, action, previous, commands,
-                           self.consts, task, cfg.dt, death, gait)
-      gait, _ = v.advance_gait(gait, s[:, v.CONTACT], next_s[:, v.CONTACT], cfg.dt)
+      s, previous, history, commands, remaining, gait, reward, death, critic_in = step_fn(
+        s, previous, history, commands, remaining, gait, wm, actor)
+      inputs.append(critic_in)
       objective = objective + discount * survival * reward
       survival = survival * (1 - death)
       continuations.append(1 - death)
       survivals.append(survival)
       rewards.append(reward)
-      commands, remaining = v.advance_commands(commands, remaining, cfg.dt, task.commands)
-      frame = v.obs_frame(next_s, action, commands, task.observation_noise)
-      history = v.push_history(history, frame, task.history)
-      s, previous = next_s, action
       discount *= cfg.gamma
     inputs.append(self.critic_input(s, previous, commands, remaining, gait))
     objective = objective + discount * survival * critic(inputs[-1]).squeeze(-1)

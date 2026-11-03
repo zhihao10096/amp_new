@@ -43,6 +43,9 @@ class TrainCfg:
   critic_hidden: tuple[int, ...] = (512, 256, 128)
   horizon: int = 32
   imag_batch: int = 2048
+  compile_imagination: bool = False
+  """Compile the imagined step; best used while reward settings stay fixed."""
+  matmul_precision: str = "high"
   critic_epochs: int = 3
   critic_minibatches: int = 4
   lr: float = 2e-4
@@ -67,6 +70,8 @@ class TrainCfg:
   """Zero disables the curriculum; otherwise reach final rewards at this iteration."""
 
   def __post_init__(self):
+    if self.matmul_precision not in ("highest", "high", "medium"):
+      raise ValueError("matmul_precision must be highest, high or medium")
     for name in ("num_envs", "iterations", "collect_steps", "buffer_len", "wm_window", "wm_batch",
                  "wm_updates", "horizon", "imag_batch", "critic_epochs", "critic_minibatches",
                  "log_interval", "save_interval", "lr_decay_iterations"):
@@ -146,7 +151,9 @@ class Trainer:
     self.opt_actor = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr, betas=(0.9, 0.95))
     self.opt_critic = torch.optim.Adam(self.critic.parameters(), lr=cfg.lr)
     self.buf = ReplayBuffer(cfg.num_envs, cfg.buffer_len, self.obs.shape[-1], self.device)
-    self.imag = Imagination(ImagineCfg(horizon=cfg.horizon, dt=env.step_dt), env.cfg.task, env.consts)
+    self.imag = Imagination(
+      ImagineCfg(horizon=cfg.horizon, dt=env.step_dt, compile=cfg.compile_imagination),
+      env.cfg.task, env.consts)
     self.ou = torch.zeros(cfg.num_envs, v.NUM_JOINTS, device=self.device)
     self.explore = torch.arange(cfg.num_envs, device=self.device) < int(cfg.explore_frac * cfg.num_envs)
     self.start_it = self.env_steps = 0
@@ -176,6 +183,8 @@ class Trainer:
       iteration, cfg.reward_curriculum_start, cfg.reward_curriculum_end)
     task = training_task(self.env.cfg.task, self.reward_fraction)
     self.imag.task = task
+    # Changing Python reward coefficients each iteration would recompile the graph.
+    self.imag.use_compiled_step = self.reward_fraction in (0.0, 1.0)
     # Reward terms read the live task as well as their manager weights.
     self.env.training_task = task
     for name in self.env.cfg.task.rewards.__dataclass_fields__:

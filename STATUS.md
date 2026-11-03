@@ -1,43 +1,43 @@
 # 当前状态与恢复入口
 
-## 目标/版本
-- 总目标：先Manager完整收敛，再参考reference/rl_amp实现Go2 AMP行走；禁止PPO。当前专注Manager静止策略。
-- 开发机目录/pfs/user/learning/amp_new；HEAD8029aaa。训练代码已提交奖励调度、PhysX扩容及调度恢复；当前未提交诊断脚本dynamics_eval.py/explore_eval.py、纯Torch探索生成器exploration.py及测试test_exploration.py。
-- reference/为用户未跟踪目录，保持原状。CPU28项通过；当前Actor接口仍225维，无phase输入。
+## 目标与版本
+- 总目标：Manager随机来源完整收敛后，再参考reference/rl_amp实现Go2 AMP；禁用PPO。
+- 开发机：/pfs/user/learning/amp_new；当前代码commit a3ea68e00bda8c6a78b9efc6fc03ca38c4bb0637。
+- 本轮修复：初期奖励恢复可收敛速度基线的关节平方惩罚，平滑过渡到最终范数；非足接触惩罚初期置零，真实/想象公式及权重同步。依据见MANAGER_BASELINE.md。
+- 用户reference/保持未跟踪原状；旧诊断/探索脚本仍未跟踪，未接入正式训练。
 
-## 当前实验
-- PID2378486，32env实际更新保存烟测，配置reward-curriculum4/12；日志logs/manager_4090/baseline_reward_smoke.log，命令见baseline_reward_smoke.process.json。
-- GPU接口回归PASS：80reset/1强制翻倒/144指令切换，真实/想象奖励初中末一致。CPU29项通过。
-- 旧周期探索扫描已结束，112组结果存trot_phase_scan.json，未用于训练。当前优先修正初期奖励与可收敛基线的数学差异。
-- 下一条命令：`tail -n 5 logs/manager_4090/baseline_reward_smoke.log`；完成后验证恢复/评估，提交修复，再从Manager随机初始化启动受控训练。
+## 当前实验与恢复命令
+- 训练PID=2381345；GPU监控PID=2381346。启动命令完整保存在logs/manager_4090/baseline_squared.process.json，工作目录为上述项目目录。
+- 本轮从随机初始化启动，不resume/warm-start。run-name=manager_baseline_squared，运行目录logs/supermimic/2026-11-03_23-14-56_505712_manager_baseline_squared。
+- 配置：8192env，collect4，buffer256，WM4096×4/window8/hidden512×3，imag8192/horizon32；warmup300+critic200，actor ramp500/scale.3；先至3000，save500，seed0。
+- 初期奖励保持到6000、9000到最终；本段只验证速度学习。目标任务及完整验收标准不变，未到最终奖励不能验收。
+- 日志logs/manager_4090/baseline_squared_train.log；显存/利用率logs/manager_4090/baseline_squared.gpu.csv；停止文件baseline_squared.stop当前不存在。
+- 下一条命令：`ps -p 2381345 -o pid,stat,etime,args; tail -n 3 logs/manager_4090/baseline_squared_train.log`。恢复必须先核实进程及checkpoint，禁止重复启动。
 
-## 最新/最佳checkpoint与最近结果
-- 最新有效：logs/supermimic/2026-11-03_22-28-23_077303_manager4090_curriculum_fixed/model_2500.pt；运行代码917072e，24576env/collect1/buffer128/WM4096×4/imag4096/horizon32，初期弱正则未开始增加最终约束（start3000/end5000）。
-- 从原Manager model1000（actor与model0相同、随机来源）继续至2500结束，用时648秒，actor更新阶段约2.2迭代/s、真实采样5.5万/s，显存约16.1GB；全日志零PhysX/CUDA错误。日志curriculum_fixed.log/.gpu.csv。
-- 7指令×4env×8秒诊断：model1500/2000前进几乎0；model2500前进1m/s实际vx约.00075，转弯yaw约.104/目标.5（curriculum_gait2500.json）。最佳Manager尚无，尚未证明收敛。
-- 原始Manager初始/恢复证据：logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/model_0.pt、model_1000.pt；原model2000/2025同目录仍在。
-- 旧Direct最佳步态：logs/supermimic/2026-11-03_20-07-39_561455_gait_slip_refinement/model_1500.pt；logs/videos均已上传，旧结果只作历史基线。
+## Checkpoint与最近指标
+- 本轮初始checkpoint=logs/supermimic/2026-11-03_23-14-56_505712_manager_baseline_squared/model_0.pt，最新model_500.pt（actor尚未更新），日志已到600，actor从501开始更新；最佳Manager尚无，尚未证明收敛。出现model1500/2000时做独立7指令诊断。
+- 上一有效轮：logs/supermimic/2026-11-03_22-28-23_077303_manager4090_curriculum_fixed/model_2500.pt，前进1m/s实际vx约.00075、转弯yaw约.104/目标.5。该轮仅改权重，未恢复平方公式。
+- 原Manager随机来源：logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/model_0.pt和model_1000.pt（两者actor相同）；旧Direct最佳仅作对照：logs/supermimic/2026-11-03_20-07-39_561455_gait_slip_refinement/model_1500.pt。
 
-## 已完成验证与已排除
-- CPU28项；16env和24576env GPU接口/奖励调度一致，32env实际WM/actor/critic更新、保存/恢复/评估、默认继承调度CLI均PASS。报告均在logs/manager_4090/。
-- 已修复PhysX patch默认163840不足，现至少32×envs（24576为786432）；大规模回归122880reset/221184指令切换零物理错误。原16k/24k吞吐测试和首次curriculum_train.log因初始化溢出作废，不复用模型/吞吐结论。
-- 弱正则训练至2500仍未解决前进，排除“仅调低步态惩罚已成功”判断；不盲目增加最终权重或宣称收敛。
-- dynamics2000.json：低速轨迹线速度RMSE单步.0032、32步.0132m/s；这不足以检验运动区间模型，接触归一化误差约1。下一关注运动覆盖、闭环预测及探索。
-- 初始周期探索扫描（trot_exploration_scan.json）可产生-.3～-.65m/s后退，但零可用前进组；尚未用于训练。实际足端Jacobian（kinematics.json）确认thigh对x为负、calf对z为负，几何符号基本符合，下一检验执行器/接触导致的抬腿相位偏差。
-- 独立SuperMimic实现通常由参考重置获得运动状态；仅作为数据覆盖启发，不移植PPO。检索结果supermimic_research.json。
+## 已完成与已排除
+- 本轮CPU29项；原生GPU观测/奖励、80reset/强制翻倒/144指令切换、课程初中末公式一致；32env真实三网络/优化器更新、保存、CLI恢复20→24（继承4/12调度）和2秒评估均PASS。证据logs/manager_4090/baseline_reward_regression.json及baseline_reward_*.log，全日志零PhysX/CUDA错误。
+- 已修复PhysX patch容量，24576env回归122880reset/221184指令切换零错误。原16k/24k溢出性能结果及curriculum_train.log作废，不复用。
+- d9eee9b3是MuJoCo chase/dodge；Direct中间版本提供Isaac速度学习对照。Manager迁移未改WM损失/actor目标。先前“弱正则成功”已排除；其初期范数惩罚与平方基线不等价。
+- 低速WM单步/32步线速度RMSE .0032/.0132不足以验证运动区间；63维WM与稀有事件采样差异仍未排除。
+- 周期探索仅扫描，未用于训练。PID2371518已结束，112组报告trot_phase_scan.json，有7组前进>.2且零摔倒（最佳vx .389/.588，相位3π/2），仅作为运动数据覆盖后备；暂停扩展该方向，优先基线对照。GitHub源码检索超时，依据本地历史源码核对，记录baseline_reward_research.json。
 
-## 环境/后续
-- RTX4090D 24564MiB，Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5，项目editable/pytest/mediapy已安装；仿真设OMNI_KIT_ACCEPT_EULA=YES/OMNI_KIT_ALLOW_ROOT=1并清除PYTHONPATH。无rg。
-- 当前剩余：验证运动探索，改善世界模型训练分布，再测随机actor的真实速度学习；完成最终步态奖励及三个1000间隔完整验收/加噪/录像后，再实现AMP。
-- AMP预研：reference/rl_amp有A1的61维motion、43维AMP特征和LSGAN判别器；后续需要Go2关节排序、足端几何适配并接入SuperMimic可微奖励，禁止PPO。
+## 环境与下一阶段
+- RTX4090D 24GB；.venv Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5；启动仿真设置OMNI_KIT_ACCEPT_EULA=YES/OMNI_KIT_ALLOW_ROOT=1并清除PYTHONPATH。开发机无rg。
+- 未解决：平方初期奖励是否足以恢复运动学习；若仍静止再按数据覆盖/WM运动梯度排查。有效后才推进最终步态及连续三个相隔1000迭代完整评估、加噪、录像和审计。
+- AMP尚未实施：reference/rl_amp包含A1 motion61/AMP43维及LSGAN，后续需Go2坐标/关节/足端适配，接入SuperMimic可微奖励，禁止PPO。
+- 目标GOAL.md；计划PLAN.md；事件PROGRESS.md；验收MANAGER_CONVERGENCE.md。
 
-验收标准MANAGER_CONVERGENCE.md；阶段计划PLAN.md；关键事件同步PROGRESS.md。
+- 效率验证：可选编译单步实现未提交、默认关闭；CPU30项含AOT前后返回和梯度一致。CUDA比较PID2386070，日志logs/manager_4090/compiled_imagination_cuda.log。当前正式训练仍使用a3ea68e。
 
-## 用户提供可收敛基线（最新优先级）
-- 用户明确d9eee9b3f248e5300e636c433255db2c1c3e086a可收敛；立即转为对照该版本与Manager/后续改动的因果差异，优先复用已验证方法。
-- 当前无正式训练；周期探索及其Trainer接入尚未用于正式训练。训练接入修改只在本地/tmp/amp_new_edit，远端仍为已提交核心训练器；远端新增诊断/探索生成器未提交。
-- 下一条命令：git show d9eee9b3:README.md，检查该提交源码树及训练/状态/奖励实现。保留当前checkpoint，不回滚用户文件。
+- 编译GPU比较首轮在TF32 high下返回最大差约6.4e-4，严格一致性未通过；尚未用于正式训练。CPU AOT一致，当前检验FP32 highest是否消除累计舍入差，PID2388047，日志logs/manager_4090/compiled_imagination_fp32.log。正式训练model1000已保存，linear_error约.695。
 
-- 烟测完成，model20=logs/supermimic/2026-11-03_23-10-31_076350_baseline_reward_smoke/model_20.pt，真实WM/actor/critic更新及保存成功；恢复CLI验证PID2379347（20→24，省略调度参数），日志logs/manager_4090/baseline_reward_resume.log。
+- FP32 highest下CUDA编译一致性PASS：actor梯度最大绝对差4.84e-8，128batch/H8单步链暖运行.0753→.0147秒（仅微基准，不代表训练加速）。编译仅在固定奖励阶段启用，课程插值期自动用普通路径避免逐轮重编译。启动真实32env更新/保存及课程切换烟测PID2388957，日志logs/manager_4090/compiled_imagination_smoke.log；最终CPU复验PID2388958。
 
-- 恢复验证PASS：model24三网络/优化器均更新且有限，CLI继承4/12调度和最终公式；开始32env/2秒评估PID2380247，日志logs/manager_4090/baseline_reward_eval.log；证据baseline_reward_regression.json。
+- 编译32env真实更新/课程切换/保存PASS、CPU30项PASS；恢复验证PID2391480，日志logs/manager_4090/compiled_imagination_resume.log。已请求当前非编译主训练在迭代边界保存停止，准备对比8192×4与16384×2采样配置（每轮真实样本同为32768）及编译吞吐，然后从同一随机来源继续。
+
+- 非编译主训练已在边界保存停止，最新checkpoint=logs/supermimic/2026-11-03_23-14-56_505712_manager_baseline_squared/model_1522.pt；启动7指令×4env×8秒早期真实步态诊断PID2392032，日志logs/manager_4090/baseline_squared_early_gait.log。该模型仅初期奖励，不作最终验收。

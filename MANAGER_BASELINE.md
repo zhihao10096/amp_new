@@ -43,3 +43,12 @@ CPU 检查覆盖小偏移、站立/运动命令及状态梯度与 legacy 公式�
 - 尝试检索官方 GitHub 奖励源码遇开发机网络超时；记录
   `logs/manager_4090/baseline_reward_research.json`。当前修正依据仓库内可核对的历史源码。
 - 最新训练、checkpoint、PID 和下一条命令始终见 [STATUS.md](STATUS.md)。
+
+## 想象执行效率
+
+原始d9eee9b3支持编译想象单步；现增加可选 `--compile-imagination`，默认关闭，
+通过 `--matmul-precision highest` 使用FP32。CPU30项及CUDA返回/梯度一致性通过，
+真实32env更新、课程切换、保存及恢复20→24通过。TF32严格对比未通过，
+FP32 actor梯度最大绝对差4.84e-8。128batch/H8微基准暖运行.0753→.0147秒，
+这不是完整训练加速比，完整吞吐及更大并行数仍须实测。
+证据 `logs/manager_4090/compiled_imagination_{fp32.json,smoke.log,resume.log}`。
