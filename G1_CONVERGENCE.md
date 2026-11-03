@@ -24,3 +24,11 @@
 初始接口证据logs/amp_g1/integration_initial.json：32环境、65次reset、13次终止、356次指令切换；专家/PhysX特征max7.15e-7，编译返回max1.19e-7、actor梯度max1.46e-11。CPU47项通过cpu_initial.log。此为接口结果，不是行走收敛。
 
 实现验证补充：CPU最终48项通过`logs/amp_g1/cpu_implementation.log`。真实四网络/优化器更新通过smoke_initial.audit.json；CLI恢复20→25后四网络继续更新，步数actor16→21、critic36→46、WM20→25、D18→23，证据smoke_resume.audit.json；A1 GPU接口回归a1_regression.json通过。G1初始七指令完整步态和独立留出风格评估可执行，smoke_baseline_gait.json风格距3.5375/3.5631；这是诊断基线，不是正式model_0，也不是收敛结论。
+
+## 正式首轮配置决定（2026-11-04）
+
+4k/8k/12k/16k/18k均完成80迭代真实四网络更新与保存，学习批次固定。稳定吞吐依次约16132/29009/41393/50966/54114真实转移/s；峰值显存14382/16212/19218/21846/23108MiB，18k GPU峰值85%。证据logs/amp_g1/performance_summary.json及两份performance*_queue.json。选择18432环境，保留约1.4GiB显存空间；不减少WM/想象/AMP批次。所有性能模型仅诊断，不作正式来源。
+
+正式从随机初始化重新开始（seed0），保存独立model_0；18432env/collect1/buffer128，WM4096×4/window8/hidden512×3，imag8192/H32，critic3×4，actor/critic512,256,128，actor_lr_scale=.15；WM预热300、critic预热200、actor渐进500，AMP2048×2/hidden512,256/lr1e-4/GP10/weight.5/ramp1000/RSI.5，FP32 highest/compile。先训练到1000，再普通站立reset完整速度/步态/独立风格评估，依据报告决定后续，不降低上述阈值。
+
+更新后的速度benchmark已在G1诊断模型真实运行，包含flight字段；完整验收器负例audit_negative.json正确拒绝短跑。相同验收器重读实际A1三模型仍通过，a1_final_audit_regression.json。

@@ -2,16 +2,16 @@
 
 ## 目标、版本与目录
 - 开发机权威目录`/pfs/user/learning/amp_new`，SSH `ssh -p 9205 root@118.196.87.69`；本地镜像`/home/user/Desktop/dream_codex_workspace/amp_new_src`。
-- 实现交接commit由标签`g1-amp-implementation-20261104`定位（提交前基线7f49486，恢复用git rev-parse HEAD核实）；A1完成37b6b58/7f49486，Manager完成b1f59eb。
+- 训练就绪commit由标签`g1-amp-training-ready-20261104`定位（实现5c02bf2，恢复用git rev-parse HEAD核实）；A1完成37b6b58/7f49486，Manager完成b1f59eb。
 - 总目标：Manager/A1已完成 → 当前G1 AMP平地walk → G1成功后X1 AMP行走。全程无PPO，SuperMimic WM/可微想象，各阶段独立验收/提交。GOAL/PLAN及G1_CONVERGENCE.md保留范围、预算及锁定标准。
 - X1参考reference/AMP，只策略控制下半身12DOF；实际动作复制进项目后.gitignore忽略（来源/SHA256/split清单纳入Git），部署配置参照参考实现；用户明确无需处理RKNN。X1尚未开始。
 - 保留未跟踪reference/和原有exploration.py、explore_eval.py、dynamics_eval.py、test_exploration.py，勿误提交。
 
 ## 当前进程与配置
-- G1性能队列PID2564814，记录时阶段performance_16384、active_pid=2570333；已实际ps核实子进程。状态/完整命令`logs/amp_g1/performance_queue.json`，队列日志performance_queue.log，各子任务performance_N.log。恢复先看JSON、/proc和GPU，不能重复启动。
-- 固定4k/8k/12k/16k并行环境串行比较，每规模80迭代；collect1/buffer128，WM4096×4/window8/hidden512×3，imag8192/H32，actor/critic512,256,128，critic3×4，AMP2048×2/hidden512,256/weight.5/RSI.5，FP32 highest/compile。性能模型不作正式训练来源；尚无正式G1训练。
-- 4k已通过实际全更新/保存，稳定真实吞吐16132/s、峰值14382MiB/GPU98%；其余规模结果以performance_queue.json为准。选择规模后从随机初始化正式训练，保留独立model_0及最终原始配置，不能从性能模型热启动。
-- G1初始接口2556134、smoke2558424、验证队列2560902及其所有子进程已实际退出。验证队列implementation_queue.json为complete，三个子任务均返回0。
+- 4k/8k/12k/16k及额外18k性能队列均已全部完成/退出，GPU已核实无计算进程。18k选择结果见logs/amp_g1/performance_summary.json；训练就绪提交后启动formal_r1.pipeline.py，从随机初始化到1000，再基线/完整速度/步态/留出风格评估。
+- 正式配置：18432env/collect1/buffer128，WM4096×4/window8/hidden512×3，imag8192/H32，actor/critic512,256,128，critic3×4；actor_lr_scale=.15，WM预热300+critic200、actor_ramp500；AMP2048×2/hidden512,256/lr1e-4/GP10/weight.5/ramp1000/RSI.5；seed0，FP32 highest/compile。无warm-start/resume，性能模型排除。
+- 正式队列脚本logs/amp_g1/formal_r1.pipeline.py，启动后状态formal_r1.pipeline.json（包含active_pid、运行目录、最新检查点和完整命令）；训练日志formal_r1_train.log、源/命令formal_r1_train.process.json。记录时尚未启动，启动后立即补记PID。
+- G1初始接口/更新/恢复/评估及A1原生回归队列已全部退出，CPU48项和实际更新/恢复/评估证据保留。
 
 ## 最新/最佳checkpoint与证据
 - G1无正式或已收敛模型。最新链路诊断`logs/supermimic/2026-11-04_03-04-30_578700_g1_smoke_resume/model_25.pt`；初始诊断目录`logs/supermimic/2026-11-04_03-00-37_568059_g1_smoke_initial/`，不能作正式成绩。性能模型目录logs/supermimic/*_g1_perf_N。
@@ -30,8 +30,26 @@
 - RTX4090D24GB；.venv Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5。仿真清除PYTHONPATH，OMNI_KIT_ACCEPT_EULA=YES、OMNI_KIT_ALLOW_ROOT=1、TORCHINDUCTOR_COMPILE_THREADS=4。开发机无rg/系统python，使用.venv/bin/python。
 
 ## 未解决问题及下一条命令
-- 当前G1实现/接口/更新/恢复已通过，正式收敛尚未验证。完成并行数/显存实测后选择规模，检查短benchmark新字段与完整验收器负例；正式从随机初始化保存model_0，持续训练并做锁定的连续三检查点/加噪/录像/实际审计。失败须定位，不能降低阈值。
-- 下一条命令：`cat logs/amp_g1/performance_queue.json && nvidia-smi`；据active_pid运行`ps -p PID -o pid,stat,etime,args`并读对应日志尾部，继续同一队列，勿重复启动。全部性能任务结束后整理summary，选择正式规模/配置并更新记录。
+- 当前G1实现/接口/更新/恢复/并行性能与验收负例已通过，正式收敛尚未验证。正式从随机初始化保存model_0，持续训练并做锁定的连续三检查点/加噪/录像/实际审计。失败须定位，不能降低阈值。
+- 下一条命令：`.venv/bin/python logs/amp_g1/formal_r1.pipeline.py`（启动后以formal_r1.pipeline.json和实际PID为准，不重复启动）；先从随机初始化正式训练到1000并完整评估，再判断是否继续。
 - X1仅只读核对参考commit6189ae4，含资产、关节顺序、预处理和导出审计；待G1独立成功/提交后才接入，不处理RKNN。
 
 历史：[G1实现/验证事件](docs/history/STATUS_2026-11-04_g1_implementation.md)、[A1](docs/history/STATUS_2026-11-04_a1_final_eval.md)、[Manager](docs/history/PROGRESS_2026-11-04_manager.md)。
+
+- G1性能实验结束performance_16384，返回码0，稳定真实吞吐50966.3/s，峰值显存21846MiB，GPU峰值85%。
+
+- G1实现/数据/资产与锁定验收已单独提交5c02bf2（g1-amp-implementation-20261104），正式收敛尚未验证。X1只读部署预查保存logs/amp_x1/reference_prereview.json：源6189ae4、31资产DOF/12策略DOF、.002×5=.01控制周期、10帧历史、动作比例.25、根高1.03及部署配置入口；未实施或复制X1动作，明确排除RKNN。
+
+- 4k/8k/12k/16k性能全部通过并退出，稳定吞吐16132/29009/41393/50966真实转移/s，峰值14382/16212/19218/21846MiB，summary见logs/amp_g1/performance_summary.json。额外串行队列PID2572786启动短benchmark新字段检查及18432规模实测，状态performance_extra_queue.json；完成后选正式配置，从随机初始化保存model_0。
+
+- G1性能实验启动short_velocity，PID2572788，固定完整学习批次，运行状态/命令logs/amp_g1/performance_extra_queue.json，日志short_velocity.log。
+
+- G1性能实验结束short_velocity，返回码0，稳定真实吞吐0.0/s，峰值显存5590MiB，GPU峰值43%。
+
+- G1性能实验启动performance_18432，PID2573272，固定完整学习批次，运行状态/命令logs/amp_g1/performance_extra_queue.json，日志performance_18432.log。
+
+- 短G1速度benchmark新机器人/12指令/flight字段已实际运行成功；完整验收器负例audit_negative.json正确拒绝短跑（require_three_velocity_and_gait_checkpoints）。同一更新后的验收器重读实际A1三个模型及原始报告仍converged=true，a1_final_audit_regression.json；此回归未重训或改动A1产物。18k性能实验仍按原队列运行。
+
+- G1性能实验结束performance_18432，返回码0，稳定真实吞吐54114.3/s，峰值显存23108MiB，GPU峰值85%。
+
+- G1并行性能已全部完成/退出：18432稳定54114真实转移/s、峰值23108MiB/GPU85%，选择此规模且学习批次不变，summary已归档。正式首轮决定已写G1_CONVERGENCE.md：随机初始化seed0、WM预热300+critic200、actor_ramp500、AMP_ramp1000，先到1000完整独立评估；无热启动或PPO，所有性能模型排除。准备提交训练就绪记录并启动正式队列。

@@ -12,3 +12,21 @@
 下一步：完成并行数实测，确认评估/验收负例后提交实现，从随机初始化正式G1训练并保存model_0；按锁定标准持续训练/独立评估，不把短检查称收敛。G1成功提交后再实施X1。
 
 历史事件docs/history/PROGRESS_2026-11-04_g1_implementation.md；原始日志保留路径和结论，不复制到记录。
+
+- G1性能实验结束performance_16384，返回码0，稳定真实吞吐50966.3/s，峰值显存21846MiB，GPU峰值85%。
+
+- G1实现/数据/资产与锁定验收已单独提交5c02bf2（g1-amp-implementation-20261104），正式收敛尚未验证。X1只读部署预查保存logs/amp_x1/reference_prereview.json：源6189ae4、31资产DOF/12策略DOF、.002×5=.01控制周期、10帧历史、动作比例.25、根高1.03及部署配置入口；未实施或复制X1动作，明确排除RKNN。
+
+- 4k/8k/12k/16k性能全部通过并退出，稳定吞吐16132/29009/41393/50966真实转移/s，峰值14382/16212/19218/21846MiB，summary见logs/amp_g1/performance_summary.json。额外串行队列PID2572786启动短benchmark新字段检查及18432规模实测，状态performance_extra_queue.json；完成后选正式配置，从随机初始化保存model_0。
+
+- G1性能实验启动short_velocity，PID2572788，固定完整学习批次，运行状态/命令logs/amp_g1/performance_extra_queue.json，日志short_velocity.log。
+
+- G1性能实验结束short_velocity，返回码0，稳定真实吞吐0.0/s，峰值显存5590MiB，GPU峰值43%。
+
+- G1性能实验启动performance_18432，PID2573272，固定完整学习批次，运行状态/命令logs/amp_g1/performance_extra_queue.json，日志performance_18432.log。
+
+- 短G1速度benchmark新机器人/12指令/flight字段已实际运行成功；完整验收器负例audit_negative.json正确拒绝短跑（require_three_velocity_and_gait_checkpoints）。同一更新后的验收器重读实际A1三个模型及原始报告仍converged=true，a1_final_audit_regression.json；此回归未重训或改动A1产物。18k性能实验仍按原队列运行。
+
+- G1性能实验结束performance_18432，返回码0，稳定真实吞吐54114.3/s，峰值显存23108MiB，GPU峰值85%。
+
+- G1并行性能已全部完成/退出：18432稳定54114真实转移/s、峰值23108MiB/GPU85%，选择此规模且学习批次不变，summary已归档。正式首轮决定已写G1_CONVERGENCE.md：随机初始化seed0、WM预热300+critic200、actor_ramp500、AMP_ramp1000，先到1000完整独立评估；无热启动或PPO，所有性能模型排除。准备提交训练就绪记录并启动正式队列。
