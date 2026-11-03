@@ -46,33 +46,60 @@ SuperMimic 学习流程，并在新环境中训练、验证速度跟踪和步态
 - 实际修改RewardManager权重后，step返回奖励按预期改变。
 - 原始日志 `logs/manager/integration_fixed.log`。
 
-## 当前训练状态
+## 本轮数值验收结果（2026-11-04）
 
-用户已上传logs/videos并授权继续，当前开发机RTX4090D 24GB。最新运行目录、进程和配置见 [STATUS.md](STATUS.md)，恢复前核实进程。
+新Manager随机来源的7000、8000、9000三个相隔1000迭代检查点，均通过上方全部完整速度和步态标准；
+9000另通过训练观测噪声下的完整速度复测。四轮完整速度评估共1280机器人分钟，均零摔倒；
+三个7指令步态评估也均零摔倒。最终侧面正常走/快走及站立录像已完成，抽帧检查通过；所有项目训练、评估和录像进程已结束，见 [STATUS.md](STATUS.md)。
 
-已复验CPU25项、原生manager GPU接口，以及奖励渐进初始/中间/最终权重与想象的一致性。32环境实际actor/critic/世界模型更新、保存恢复和短评估通过，报告 `logs/manager_4090/curriculum_smoke_report.json`。
+| 检查点 | 随机稳态vx / vy / yaw RMSE | 站立步频Hz | 1m/s足滑m/s | 1.5m/s足滑m/s | 完整速度/步态 |
+| --- | --- | ---: | ---: | ---: | --- |
+| 7000 | .05065 / .04618 / .04593 | 0 | .07259 | .11017 | 全部通过 |
+| 8000 | .04603 / .04378 / .04109 | .00988 | .07737 | .11334 | 全部通过 |
+| 9000 | .04054 / .04416 / .03648 | 0 | .07295 | .11357 | 全部通过 |
+| 9000加噪 | .04285 / .04726 / .05306 | — | — | — | 完整速度通过 |
 
-8192环境实测约5.8万真实转移/秒；复查发现原16384/24576吞吐实验初始化时发生patch buffer溢出，因此这两组性能结果作废。现按每机器人32个patch扩容PhysX（24576环境为786432），大规模GPU回归通过122880次reset、221184次指令切换且全日志零PhysX错误，日志 `logs/manager_4090/large_scene_integration.log`。容量修复参考了IsaacLab本地配置定义及GitHub #5783对场景GPU缓冲区的配置方案；与Newton后端问题无关。
+9000在1/1.5m/s时每足步频均3.530Hz、平均腾空均约.1312s、
+平均摆动离地.01697/.01893m、短摆动比例均0，七指令速度均达标。
+保留原定阈值；未使用PPO、外部策略、周期探索或优先采样。
 
-model2025在有效8192配置下续训仍未改善静止策略。当前验证弱正则速度学习后逐步引入最终步态奖励，目标任务和预定验收阈值不变；审计拒绝调度未完成的checkpoint。
+## 模型、来源和证据
 
-正式训练仍只接受Manager随机初始化来源；本轮拟从原model1000未更新的随机actor与已预热世界模型继续，初始证据仍为原model0。原始目录 `logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/`。
-**新Manager速度跟踪已通过完整覆盖，最终步态和三检查点收敛验收尚未完成。** 历史Direct结果不能代替新环境验收。
+- 最终模型 `checkpoints/go2_manager_converged.pt`，元数据同名.json。
+- 源模型 `logs/supermimic/2026-11-04_00-32-55_866984_manager_final9000/model_9000.pt`；8000同目录。
+- 7000 `logs/supermimic/2026-11-04_00-24-18_384210_manager_final7000/model_7000.pt`。
+- 随机初始 `logs/supermimic/2026-11-03_23-14-56_505712_manager_baseline_squared/model_0.pt`，无resume/warm-start。
+  后续续训始终保留Manager random_initialization来源；a3ea68e修正初期平方惩罚，8cb89bb/a86c036优化编译执行。
+- 审计 `logs/manager_4090/convergence_report.json`：converged=true、failures=[]；核实task一致、最终课程比例1、
+  三网络及优化器真实更新、数值有限性、来源与实际文件SHA256。
+- 速度/步态 `logs/manager_4090/manager_{velocity,gait}7000.json`、`manager_{velocity,gait}8000_9000.json`；
+  最终噪声 `manager_noisy9000.json`，完整指标和曲线 `manager_evaluation_summary.{json,png}`。
+- 最终SHA256 `07fc3f6e0e6801a3e60ab591be25dbeb3071c930809f847dd14284477dbfa9dd`。
+- 侧面对比 `videos/manager_gait_comparison.mp4`（左3000/右9000），快走 `manager_fast_side.mp4`，站立 `manager_stand.mp4`；所有录像指标零摔倒。
+  2/2.08/5/8秒抽帧 `logs/manager_4090/manager_side_contact_sheet.jpg` 已检查，四足完整入镜，未见翻倒或明显穿地。接触时序的定量结论来自独立评估。
+- 首批录像 `videos/manager_{before,after,fast,stand}.mp4` 及近景调试产物保留。
+  首次远景偏小，近景lookat正z导致下沿偏紧；依据IsaacLab跟随原点定义补录eye=(1.2,-1.8,.6)、lookat=(0,0,-.1)，不修改训练代码或模型。
 
-本轮Manager随机来源model3000（`2026-11-03_23-40-16_677008_manager_baseline_squared_fast`）
-通过20固定+3随机种子完整速度阈值；随机稳态平均RMSE为(.0566,.0701,.0561)。
-7指令速度达标且零摔倒，但1m/s步频6.087Hz、腾空.0422秒、足滑.2857m/s，
-仍未达最终步态标准。当前保留原定标准，准备渐进最终奖励；
-证据 `logs/manager_4090/baseline_squared_velocity3000.json` / `baseline_squared_gait3000.json`。
+## 验证与效率
 
-完整审计命令：
+此前CPU31项、原生manager观测/奖励/reset/终止/指令切换、三网络真实更新、保存恢复及课程编译数值/梯度一致性已通过。
+PhysX patch按32×env扩容后32768环境完整回归零物理错误；相同每轮32768真实转移下，
+32k编译约12.5万转移/s、21728MiB，16k约11.9万/s、8k约10.4万/s。
+旧16k/24k初始化溢出的性能数字作废，不计入证据。
+最终训练配置32k/collect1/buffer128（每env回放2.56s）、WM4096×4/window8/hidden512×3、imag8192/H32、
+FP32 highest编译、actor_scale=.15、seed0；3000→5000最终奖励课程后保持最终任务。
+真实manager和想象共享同一奖励数学定义。6000→9000各训练日志均零物理/CUDA错误，末段约12.2–12.6万转移/s、显存21792MiB。
+
+## 复核命令
 
 ```bash
-python scripts/check_convergence.py \
-  --benchmarks <three-checkpoint-velocity.json> \
-  --gaits <three-checkpoint-gait.json> --noisy <final-noisy.json> \
-  --initial-checkpoint <run>/model_0.pt --output logs/manager/convergence_report.json
+.venv/bin/python scripts/check_convergence.py \
+  --benchmarks logs/manager_4090/manager_velocity7000.json logs/manager_4090/manager_velocity8000_9000.json \
+  --gaits logs/manager_4090/manager_gait7000.json logs/manager_4090/manager_gait8000_9000.json \
+  --noisy logs/manager_4090/manager_noisy9000.json \
+  --initial-checkpoint logs/supermimic/2026-11-03_23-14-56_505712_manager_baseline_squared/model_0.pt \
+  --output logs/manager_4090/convergence_report.json
 ```
 
-审计同时读取实际检查点，核对manager backend、随机初始化来源、任务配置、
-网络/优化器更新、数值有限性和文件校验和；缺少任何一项不宣布收敛。
+初期静止、奖励差异及已排除方案详见 [MANAGER_BASELINE.md](MANAGER_BASELINE.md) 与PROGRESS历史归档。
+这不是单因素消融，不把改善全部归因于某一项改动；结论适用于上述平地任务和预先记录的评估覆盖。
