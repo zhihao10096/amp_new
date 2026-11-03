@@ -4,10 +4,10 @@
 新Manager环境已通过预先记录的独立验收：7000/8000/9000三个相隔1000迭代检查点完整速度和步态全部达标，最终加噪、录像及来源/更新审计通过。
 最终模型 `checkpoints/go2_manager_converged.pt`，报告 [Manager验收记录](MANAGER_CONVERGENCE.md)，侧面对比 `videos/manager_gait_comparison.mp4`。旧训练产物仍保留于logs/videos。
 
-当前推进 `A1-AMP-Flat`：Isaac Lab 原生 A1、平地、A1 动作数据和 AMP 风格奖励，
+已完成 `A1-AMP-Flat`：Isaac Lab 原生 A1、平地、A1 动作数据和 AMP 风格奖励，
 沿用 SuperMimic 世界模型与可微想象更新 actor，全程不用 PPO。数据、时间留出与独立收敛
 标准见 [A1 AMP 验收](AMP_CONVERGENCE.md)；实现验证与实际训练状态见 STATUS.md。
-后续为 G1 平地 walk。
+A1正式1000/2000/3000三个检查点全部通过独立验收，最终加噪与录像通过，归档模型 `checkpoints/a1_amp_converged.pt`。下一阶段为 G1 平地 walk；实际使用的G1参考动作也须复制入本项目Git管理的目录。
 
 使用 **Isaac Lab / Isaac Sim / PhysX** 实现 Unitree Go2 平地速度跟踪。任务为
 `Go2-Velocity-Flat`，输入机体系前进速度 `vx`、侧向速度 `vy`（m/s）与转向角速度
