@@ -2,19 +2,19 @@
 
 ## 目标、版本与目录
 - 开发机权威目录`/pfs/user/learning/amp_new`，SSH `ssh -p 9205 root@118.196.87.69`；本地镜像`/home/user/Desktop/dream_codex_workspace/amp_new_src`。
-- 训练就绪commit由标签`g1-amp-training-ready-20261104`定位（实现5c02bf2，恢复用git rev-parse HEAD核实）；A1完成37b6b58/7f49486，Manager完成b1f59eb。
+- 当前正式训练代码commit `14b7dcbaf7257b8b32dce1d8db467b16225595be`，标签`g1-amp-training-ready-20261104`；实现5c02bf2。后续文档提交不改变在跑训练版本，当前工作树HEAD用`git rev-parse HEAD`核实。A1完成37b6b58/7f49486，Manager完成b1f59eb。
 - 总目标：Manager/A1已完成 → 当前G1 AMP平地walk → G1成功后X1 AMP行走。全程无PPO，SuperMimic WM/可微想象，各阶段独立验收/提交。GOAL/PLAN及G1_CONVERGENCE.md保留范围、预算及锁定标准。
 - X1参考reference/AMP，只策略控制下半身12DOF；实际动作复制进项目后.gitignore忽略（来源/SHA256/split清单纳入Git），部署配置参照参考实现；用户明确无需处理RKNN。X1尚未开始。
 - 保留未跟踪reference/和原有exploration.py、explore_eval.py、dynamics_eval.py、test_exploration.py，勿误提交。
 
 ## 当前进程与配置
-- 4k/8k/12k/16k及额外18k性能队列均已全部完成/退出，GPU已核实无计算进程。18k选择结果见logs/amp_g1/performance_summary.json；训练就绪提交后启动formal_r1.pipeline.py，从随机初始化到1000，再基线/完整速度/步态/留出风格评估。
+- 状态核实时间：2026-11-04 03:30:45 CST。性能队列全部结束，18432规模选择依据见logs/amp_g1/performance_summary.json。正式随机初始化首轮已训练至1000、训练返回码0；初始基线步态评估也已结束，当前同一队列阶段`formal_r1_velocity1000`，队列PID2577168、active_pid=2582551（需恢复时重新核实）。
 - 正式配置：18432env/collect1/buffer128，WM4096×4/window8/hidden512×3，imag8192/H32，actor/critic512,256,128，critic3×4；actor_lr_scale=.15，WM预热300+critic200、actor_ramp500；AMP2048×2/hidden512,256/lr1e-4/GP10/weight.5/ramp1000/RSI.5；seed0，FP32 highest/compile。无warm-start/resume，性能模型排除。
-- 正式队列脚本logs/amp_g1/formal_r1.pipeline.py，启动后状态formal_r1.pipeline.json（包含active_pid、运行目录、最新检查点和完整命令）；训练日志formal_r1_train.log、源/命令formal_r1_train.process.json。记录时尚未启动，启动后立即补记PID。
+- 正式队列脚本logs/amp_g1/formal_r1.pipeline.py，启动后状态formal_r1.pipeline.json（包含active_pid、运行目录、最新检查点和完整命令）；训练日志formal_r1_train.log、源/命令formal_r1_train.process.json。正式队列PID2577168存活、训练PID2577268已正常退出；当前子进程以pipeline.json为准，运行目录logs/supermimic/2026-11-04_03-23-40_354760_g1_amp_formal_r1；初始model_0四优化器全新/随机来源/锁定任务、动作及资产SHA256已核对formal_r1_initial_audit.json。
 - G1初始接口/更新/恢复/评估及A1原生回归队列已全部退出，CPU48项和实际更新/恢复/评估证据保留。
 
 ## 最新/最佳checkpoint与证据
-- G1无正式或已收敛模型。最新链路诊断`logs/supermimic/2026-11-04_03-04-30_578700_g1_smoke_resume/model_25.pt`；初始诊断目录`logs/supermimic/2026-11-04_03-00-37_568059_g1_smoke_initial/`，不能作正式成绩。性能模型目录logs/supermimic/*_g1_perf_N。
+- G1正式首轮最新已保存`logs/supermimic/2026-11-04_03-23-40_354760_g1_amp_formal_r1/model_1000.pt`，model_0为同目录初始基线；1000完整独立评估尚未结束，尚无最佳已评估或已收敛模型。链路诊断`logs/supermimic/2026-11-04_03-04-30_578700_g1_smoke_resume/model_25.pt`；初始诊断目录`logs/supermimic/2026-11-04_03-00-37_568059_g1_smoke_initial/`，不能作正式成绩。性能模型目录logs/supermimic/*_g1_perf_N。
 - CPU最终48项通过logs/amp_g1/cpu_implementation.log。GPUintegration_initial.json覆盖65reset/13终止/356指令切换/终止前状态和历史/普通与RSI reset/真实想象奖励一次dt；专家与PhysX特征max7.15e-7，编译返回max1.19e-7、actor梯度max1.46e-11。
 - 实际四网络/四优化器更新及保存通过smoke_initial.audit.json；CLI恢复20→25继承任务/数据/来源，四网络继续更新且有限，步数actor16→21/critic36→46/WM20→25/D18→23；smoke_resume.audit.json。
 - A1原生GPU接口回归a1_regression.json通过；G1完整七指令初始步态/独立留出评估可执行，smoke_baseline_gait.json风格距3.5375/3.5631（初始策略未收敛，仅验证评估链路）。完整评估入口benchmark.py/gait_eval.py/check_amp_convergence.py --robot g1。
@@ -30,8 +30,8 @@
 - RTX4090D24GB；.venv Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5。仿真清除PYTHONPATH，OMNI_KIT_ACCEPT_EULA=YES、OMNI_KIT_ALLOW_ROOT=1、TORCHINDUCTOR_COMPILE_THREADS=4。开发机无rg/系统python，使用.venv/bin/python。
 
 ## 未解决问题及下一条命令
-- 当前G1实现/接口/更新/恢复/并行性能与验收负例已通过，正式收敛尚未验证。正式从随机初始化保存model_0，持续训练并做锁定的连续三检查点/加噪/录像/实际审计。失败须定位，不能降低阈值。
-- 下一条命令：`.venv/bin/python logs/amp_g1/formal_r1.pipeline.py`（启动后以formal_r1.pipeline.json和实际PID为准，不重复启动）；先从随机初始化正式训练到1000并完整评估，再判断是否继续。
+- 当前G1实现/接口/更新/恢复/并行性能与验收负例已通过，正式首轮1000训练及四网络/四优化器随机来源审计通过；完整独立速度/步态/留出风格评估尚在进行，正式收敛未验证。后续仍须连续三检查点/加噪/录像/实际审计，失败须定位，不能降低阈值。
+- 下一条命令：`cat logs/amp_g1/formal_r1.pipeline.json && tail -n 2 logs/amp_g1/formal_r1_train.log && nvidia-smi`，核实active_pid并继续同一正式队列，禁止重复启动。当前队列自动完成1000的基线/速度/步态/独立风格评估后停止，不会自动续训；依据formal_r1_assessment1000.json决定继续训练或定位修复。
 - X1仅只读核对参考commit6189ae4，含资产、关节顺序、预处理和导出审计；待G1独立成功/提交后才接入，不处理RKNN。
 
 历史：[G1实现/验证事件](docs/history/STATUS_2026-11-04_g1_implementation.md)、[A1](docs/history/STATUS_2026-11-04_a1_final_eval.md)、[Manager](docs/history/PROGRESS_2026-11-04_manager.md)。
@@ -53,3 +53,19 @@
 - G1性能实验结束performance_18432，返回码0，稳定真实吞吐54114.3/s，峰值显存23108MiB，GPU峰值85%。
 
 - G1并行性能已全部完成/退出：18432稳定54114真实转移/s、峰值23108MiB/GPU85%，选择此规模且学习批次不变，summary已归档。正式首轮决定已写G1_CONVERGENCE.md：随机初始化seed0、WM预热300+critic200、actor_ramp500、AMP_ramp1000，先到1000完整独立评估；无热启动或PPO，所有性能模型排除。准备提交训练就绪记录并启动正式队列。
+
+- G1正式队列已实际启动，PID2577168，训练代码/HEAD 14b7dcbaf7257b8b32dce1d8db467b16225595be（14b7dcb），启动记录formal_r1.launch.json；状态logs/amp_g1/formal_r1.pipeline.json包含active_pid/配置/运行目录/检查点。18432环境、随机初始化，无PPO/热启动，先1000再完整基线/速度/步态/风格。下一条命令cat logs/amp_g1/formal_r1.pipeline.json并核实active_pid/GPU，禁止重复启动。
+
+- G1正式任务启动formal_r1_train，PID2577268，命令/配置/日志logs/amp_g1/formal_r1_train.process.json及.log，队列formal_r1.pipeline.json；不重复启动。
+
+- G1正式任务结束formal_r1_train，PID2577268，返回码0，证据logs/amp_g1/formal_r1_train.log。
+
+- G1正式1000训练及实际四网络四优化器/随机来源审计通过，开始初始基线及完整独立速度/步态/留出风格；不代表已收敛。
+
+- G1正式任务启动formal_r1_baseline_gait，PID2581898，命令/配置/日志logs/amp_g1/formal_r1_baseline_gait.process.json及.log，队列formal_r1.pipeline.json；不重复启动。
+
+- G1正式任务结束formal_r1_baseline_gait，PID2581898，返回码0，证据logs/amp_g1/formal_r1_baseline_gait.log。
+
+- G1正式任务启动formal_r1_velocity1000，PID2582551，命令/配置/日志logs/amp_g1/formal_r1_velocity1000.process.json及.log，队列formal_r1.pipeline.json；不重复启动。
+
+- 2026-11-04 03:30:45 CST：落实用户G1数据要求，PLAN明确`assets/motions/g1/`及后续新增/替换同规则；七份实际动作均已在HEAD纳入Git，SHA256全匹配，默认加载入口go2_supermimic/g1.py:31。正式model_0基线留出风格距离forward=3.538978/fast=3.586489（仅初始基线）；1000独立评估未结束。无新启动实验。
