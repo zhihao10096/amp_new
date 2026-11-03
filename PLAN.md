@@ -5,8 +5,8 @@
 3. 已完成：定位大场景PhysX patch溢出，按32×envs扩容；24576环境完整GPU回归零物理错误。原16k/24k性能结果作废，按新配置再测。
 4. 已完成：Manager随机初始化来源model3000通过20固定+3随机种子完整速度阈值；7指令速度达标且零摔倒。基线公式修复和编译优化均验证，32k约12.5万真实转移/s；详见MANAGER_BASELINE.md。
 5. 已完成：7000/8000/9000连续三个检查点全部通过完整速度/步态，9000加噪与实际checkpoint来源/更新审计通过；侧面/站立录像及抽帧完成，模型归档checkpoints/go2_manager_converged.pt，本阶段结果提交。
-6. 待Manager验收后：参考reference/rl_amp接入运动数据、Go2坐标适配、AMP判别器与SuperMimic可微奖励/世界模型；禁止PPO；独立训练评估AMP行走。
+6. 进行中：参考reference/rl_amp接入运动数据、A1关节顺序/坐标适配、AMP判别器与SuperMimic可微奖励/世界模型；Go2只做平地行走，禁止PPO。先做运动库/FK/真实与想象接口验证，记录AMP独立验收标准，再训练评估并提交。
 
 实验最新PID/目录/命令、有效/作废模型与指标见STATUS.md；事件结论及时写PROGRESS.md。
 
-7. 待Go2 AMP完成并提交后：参考reference/legged_lab接入G1资产/AMP运动数据，仅平地walk，禁用run/其它任务/粗糙地形；锁定评估标准后训练、独立评估/录像并提交。全部阶段禁用PPO。
+7. 待A1 AMP完成并提交后：参考reference/legged_lab接入G1资产/AMP运动数据，仅平地walk，禁用run/其它任务/粗糙地形；锁定评估标准后训练、独立评估/录像并提交。全部阶段禁用PPO。

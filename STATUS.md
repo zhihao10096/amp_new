@@ -1,7 +1,7 @@
 # 当前状态与恢复入口
 
 ## 目标、版本与目录
-- 当前阶段：新Manager随机初始化训练的速度/步态完整收敛验收已完成；下一阶段Go2 AMP，再G1平地walk。全程不用PPO，AMP尚未启动。范围/预算见GOAL，计划见PLAN。
+- 当前阶段：Manager已验收并提交；正在实现A1 AMP平地行走，后续G1平地walk；全程禁PPO，总目标未完成，AMP尚未启动训练。范围/预算见GOAL，计划见PLAN。
 - 开发机 `/pfs/user/learning/amp_new`。当前commit标识 `manager-converged-20261104`（本地标签与本阶段提交HEAD相同，恢复执行 `git rev-parse HEAD manager-converged-20261104` 核实）；训练/评估代码commit `a86c036f51aaf2bfc7c70d78f0f46f498d28a95c`。
 - 原始基线提示d9eee9b3已对照；实现差异、证据和限制见MANAGER_BASELINE.md，完整验收见MANAGER_CONVERGENCE.md。
 - 用户reference/保持原状；未跟踪exploration.py、explore_eval.py、dynamics_eval.py、test_exploration.py为早期诊断候选，未用于正式训练，勿误提交。
@@ -31,6 +31,18 @@
 - RTX4090D24GB；.venv Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5；仿真清除PYTHONPATH，OMNI_KIT_ACCEPT_EULA=YES、OMNI_KIT_ALLOW_ROOT=1；编译线程4；开发机无rg。
 
 ## 未解决问题与下一条命令
-- Manager阶段无未完成验收项。Go2 AMP及G1 walk尚未实现；旧Direct模型仅历史对照。不要把完成Manager理解为已完成AMP。
+- Manager阶段无未完成验收项。A1 AMP及G1 walk尚未实现；旧Direct模型仅历史对照。不要把完成Manager理解为已完成AMP。
 - 恢复第一条命令：`git rev-parse HEAD manager-converged-20261104; cat checkpoints/go2_manager_converged.json; cat logs/manager_4090/final_process_check.json`，再核实记录中的PID已退出。
-- 后续Go2 AMP先核对reference/rl_amp的运动库/坐标/重置/判别器及本项目世界模型和可微奖励接入点，预先记录训练数据与验收标准后再实现/启动。全过程不用PPO。
+- 后续A1 AMP先核对reference/rl_amp的运动库/坐标/重置/判别器及本项目世界模型和可微奖励接入点，预先记录训练数据与验收标准后再实现/启动。全过程不用PPO。
+
+## 进入Go2 AMP平地阶段
+- 恢复核实HEAD b1f59eb，前阶段记录的训练/评估/监控均已退出，GPU空闲；Manager验收和模型保留，不重复训练。
+- 用户明确Go2 AMP也仅平地；G1后续仅平地walk，禁run和其它动作。全程禁止PPO，按阶段提交，总目标仍未完成。
+- 已核对reference/rl_amp：43维状态（绝对关节角、局部足端、机体系线/角速度、关节速度、高度）相邻帧LSGAN与专家零中心梯度惩罚。现有63维WM状态足够，拟接入同一纯Torch特征和冻结判别器可微奖励，actor继续世界模型反传，不使用参考PPO训练器。
+- A1运动数据为FL/FR/RL/RR逐腿顺序，当前IsaacLab关节顺序及Go2几何必须实测；拟用Go2 FK重算足端和高度，避免A1/Go2几何混入判别标签。先GPU探测，再锁定数据/验收，尚未启动AMP训练。
+
+## 用户范围变更：A1替代Go2 AMP
+- 按用户最新要求，将后续Go2 AMP改为A1 AMP平地行走，G1仅平地walk和全程禁PPO保持；已更新GOAL.md和PLAN.md，不能把A1阶段省略或以Go2结果代替。
+- 尚未启动Go2几何探测或AMP实验，只有日志目录中的探测脚本草稿；无需停止运行作业。当前HEAD仍b1f59eb，GPU空闲，无最新/最佳AMP checkpoint。
+- A1原生IsaacLab资产与reference/rl_amp的mocap_motions_a1对应，优先验证A1 Manager环境、关节顺序和FK，而非继续Go2几何适配。AMP判别器/纯Torch特征与世界模型可微想象方案继续适用。
+- 下一条命令：核对UNITREE_A1_CFG、参考A1 URDF与运动库，随后建立A1-AMP-Flat配置和GPU接口验证。

@@ -16,7 +16,19 @@
 - CPU31项及原生GPU接口、三网络更新、保存恢复、动态课程/编译梯度一致性此前通过；后续没有训练源码改动。AGENTS保持长期规则和文档入口。
 
 ## 下一阶段
-- 按GOAL/PLAN，Manager后参考reference/rl_amp接入Go2 AMP，再参考reference/legged_lab做G1平地walk，全程不用PPO。当前任务已完成，尚未启动AMP实验。
+- 按GOAL/PLAN，Manager后参考reference/rl_amp接入A1 AMP平地行走，再参考reference/legged_lab做G1平地walk，全程不用PPO。当前任务已完成，尚未启动AMP实验。
 - 下一条恢复命令及最新/最佳checkpoint、版本、运行目录和配置见STATUS，避免重复启动。
 
 历史事件及日志依据：[本轮完整过程](docs/history/PROGRESS_2026-11-04_manager.md)、[更早归档](docs/history/PROGRESS_2026-11-03.md)。
+
+## 进入Go2 AMP平地阶段
+- 恢复核实HEAD b1f59eb，前阶段记录的训练/评估/监控均已退出，GPU空闲；Manager验收和模型保留，不重复训练。
+- 用户明确Go2 AMP也仅平地；G1后续仅平地walk，禁run和其它动作。全程禁止PPO，按阶段提交，总目标仍未完成。
+- 已核对reference/rl_amp：43维状态（绝对关节角、局部足端、机体系线/角速度、关节速度、高度）相邻帧LSGAN与专家零中心梯度惩罚。现有63维WM状态足够，拟接入同一纯Torch特征和冻结判别器可微奖励，actor继续世界模型反传，不使用参考PPO训练器。
+- A1运动数据为FL/FR/RL/RR逐腿顺序，当前IsaacLab关节顺序及Go2几何必须实测；拟用Go2 FK重算足端和高度，避免A1/Go2几何混入判别标签。先GPU探测，再锁定数据/验收，尚未启动AMP训练。
+
+## 用户范围变更：A1替代Go2 AMP
+- 按用户最新要求，将后续Go2 AMP改为A1 AMP平地行走，G1仅平地walk和全程禁PPO保持；已更新GOAL.md和PLAN.md，不能把A1阶段省略或以Go2结果代替。
+- 尚未启动Go2几何探测或AMP实验，只有日志目录中的探测脚本草稿；无需停止运行作业。当前HEAD仍b1f59eb，GPU空闲，无最新/最佳AMP checkpoint。
+- A1原生IsaacLab资产与reference/rl_amp的mocap_motions_a1对应，优先验证A1 Manager环境、关节顺序和FK，而非继续Go2几何适配。AMP判别器/纯Torch特征与世界模型可微想象方案继续适用。
+- 下一条命令：核对UNITREE_A1_CFG、参考A1 URDF与运动库，随后建立A1-AMP-Flat配置和GPU接口验证。
