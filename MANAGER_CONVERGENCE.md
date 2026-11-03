@@ -48,14 +48,11 @@ SuperMimic 学习流程，并在新环境中训练、验证速度跟踪和步态
 
 ## 当前训练状态
 
-32环境短跑到12轮、恢复到16轮并评估完成，核对actor/critic/世界模型均更新且有限。
-正式8192环境随机初始化训练已启动：
-`logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/`。
-配置无resume/warm-start，第0轮模型已保存；训练origin随检查点保存/恢复。
-WM4096×4、imag8192、800轮WM+200轮critic预热，之后更新actor。
-日志 `logs/manager/train.log`，GPU连续采样 `logs/manager/gpu.csv`。
-新环境实际actor更新阶段约8.2万条真实转移/秒。
-尚无新manager环境的收敛证据；完成独立评估后在此补充模型和报告位置。
+当前开发机无运行中的训练/评估进程，且没有历史 logs/checkpoints/videos；实际配置与恢复入口见 [STATUS.md](STATUS.md)。用户此前已要求停止训练，本轮仅熟悉项目及整理文档。
+
+历史记录：32环境短跑到12轮、恢复到16轮并评估；8192环境曾从随机初始化训练到model2025，model2000诊断为近似静止，后续恢复曾在想象阶段OOM，降低batch后的尝试也已中止。该记录来自迁入的文档，本轮未复现。
+历史运行目录为 `logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/`，配置和失败结论见 [历史归档](docs/history/PROGRESS_2026-11-03.md)。
+**新Manager环境尚无收敛证据。** 后续必须在实际存在的模型/报告上完成以下审计，不能沿用旧Direct结论。
 
 完整审计命令：
 

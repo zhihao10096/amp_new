@@ -1,5 +1,8 @@
 # Go2 SuperMimic：Isaac Lab 速度跟踪
 
+当前目标、计划和开发机实际状态见 [GOAL.md](GOAL.md)、[PLAN.md](PLAN.md)、[STATUS.md](STATUS.md)。
+本文中的旧训练产物是历史记录；当前开发机未迁入模型、日志和视频。
+
 使用 **Isaac Lab / Isaac Sim / PhysX** 实现 Unitree Go2 平地速度跟踪。任务为
 `Go2-Velocity-Flat`，输入机体系前进速度 `vx`、侧向速度 `vy`（m/s）与转向角速度
 `yaw_rate`（rad/s），输出 12 个关节位置偏移。指令每 6–10 秒重采样，10% 为站立。
