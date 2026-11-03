@@ -7,7 +7,12 @@
 训练保留 SuperMimic 的模型学习方法：在 PhysX 中收集真实转移，拟合多步世界模型，
 再通过冻结的世界模型进行想象滚动，反向传播更新 actor，并用 TD(λ) 更新 critic。
 
-本机已训练并验证收敛模型：`checkpoints/go2_velocity_converged.pt`。第 3000、4000、
+环境现使用 **ManagerBasedRLEnv**，由原生动作、观测、指令、奖励、终止和事件
+managers 执行任务。新实现正从随机初始化训练并验证收敛，进度及独立验收标准见
+[Manager based 验证记录](MANAGER_CONVERGENCE.md)。
+
+以下为迁移前 Direct 环境的历史基线。速度收敛模型：
+`checkpoints/go2_velocity_converged.pt`。第 3000、4000、
 5000 次检查点连续通过完整指令评估；第 5000 次模型随机指令稳态 RMSE 为
 vx / vy / yaw-rate = **0.048 / 0.032 / 0.039**，独立标准/带噪声评估均零摔倒。
 模型和录像保留在本地，详见 [收敛验证记录](CONVERGENCE.md)。
@@ -116,7 +121,7 @@ python scripts/gait_eval.py --headless --checkpoints <old.pt> <new.pt> \
   使用 Isaac Lab Go2 的 DC motor PD 与转速相关力矩限制，动作限幅到 `[-4, 4]`。
 - actor 每帧 45 维：角速度 3、重力投影 3、速度指令 3、关节位置偏移 12、
   关节速度 12、上一动作 12；按观测项保存 5 帧历史，共 **225 维**。
-  reset 清空历史，随后填入首帧。actor 不输入真实线速度。
+  原生 ObservationManager 在 reset 后用首帧填满历史。actor 不输入真实线速度。
 - 世界模型状态 63 维：原有机身/关节状态 34 维，加足端位置 12、足端速度 12、
   足端接触 4、非足端接触数量 1。模型以当前状态、当前动作、上一动作预测状态增量。
   回放另外保存 16 维足端腾空/支撑计时，由仿真和想象共用的可微计时器更新。
@@ -135,12 +140,13 @@ python scripts/gait_eval.py --headless --checkpoints <old.pt> <new.pt> \
 ```text
 go2_supermimic/
   velocity.py       共用的纯 Torch 指令、观测、奖励、终止及电机模型
-  env/              Isaac Lab 配置、任务注册和 DirectRLEnv
+  env/              ManagerBasedRLEnv 配置、manager terms、状态适配及任务注册
   supermimic/       状态适配、回放、世界模型、想象滚动和训练器
 scripts/            train.py、eval.py、benchmark.py、gait_eval.py
 tests/              数值/梯度回归测试及显式 GPU 集成检查
 PROGRESS.md         迁移进度及实际验证记录
 CONVERGENCE.md      收敛标准、测量结果及本地模型位置
+MANAGER_CONVERGENCE.md  Manager based 迁移、随机初始化训练及新收敛验收
 ```
 
 采用 MIT 许可证（见 [LICENSE](LICENSE)）。训练方法参考

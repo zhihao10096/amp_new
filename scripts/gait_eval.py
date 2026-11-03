@@ -8,11 +8,7 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
-CASES = [
-  ("stand", (0., 0., 0.)), ("slow", (.5, 0., 0.)), ("forward", (1., 0., 0.)),
-  ("fast", (1.5, 0., 0.)), ("backward", (-.7, 0., 0.)),
-  ("left", (0., .4, 0.)), ("turn", (.8, 0., .5)),
-]
+from go2_supermimic.validation import GAIT_CASES as CASES
 
 
 def main():
@@ -133,6 +129,8 @@ def main():
           "front_contact_alternation": x["front_alternation"] / samples,
         }
       result = {"checkpoint": str(Path(path).resolve()), "iteration": checkpoint["iteration"],
+                "environment_backend": env.environment_backend,
+                "checkpoint_backend": checkpoint.get("environment_backend", "legacy_direct"),
                 "seconds": args.seconds, "repeats": args.repeats, "seed": args.seed, "cases": cases}
       results.append(result)
       print(json.dumps(result, indent=2), flush=True)

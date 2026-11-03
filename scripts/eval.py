@@ -64,7 +64,7 @@ def main():
     cfg.task = task_from_dict(ckpt["task_cfg"])
     cfg.task.observation_noise = False
     if args.robot_usd:
-      cfg.robot.spawn.usd_path = args.robot_usd
+      cfg.scene.robot.spawn.usd_path = args.robot_usd
     cfg.viewer.resolution = (args.width, args.height)
     cfg.viewer.origin_type = "asset_root"
     cfg.viewer.asset_name = "robot"
@@ -108,6 +108,8 @@ def main():
     samples = count * env.num_envs
     rmse = (squared / samples).sqrt().tolist()
     metrics = {"task": args.task, "checkpoint": str(Path(args.checkpoint).resolve()),
+               "environment_backend": env.environment_backend,
+               "checkpoint_backend": ckpt.get("environment_backend", "legacy_direct"),
                "num_envs": env.num_envs, "seconds": count * env.step_dt, "seed": args.seed,
                "command": args.command, "rmse_vx_m_s": rmse[0], "rmse_vy_m_s": rmse[1],
                "rmse_yaw_rad_s": rmse[2], "mean_command": (commanded / samples).tolist(),

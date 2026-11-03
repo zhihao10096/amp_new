@@ -144,6 +144,9 @@ class Trainer:
     self.ou = torch.zeros(cfg.num_envs, v.NUM_JOINTS, device=self.device)
     self.explore = torch.arange(cfg.num_envs, device=self.device) < int(cfg.explore_frac * cfg.num_envs)
     self.start_it = self.env_steps = 0
+    self.training_origin = {
+      "kind": "random_initialization", "seed": cfg.seed,
+      "environment_backend": env.environment_backend}
     if cfg.resume:
       self.load(cfg.resume)
     elif cfg.warm_start:
@@ -152,7 +155,9 @@ class Trainer:
     self.log_dir = Path(cfg.log_root) / f"{stamp}_{cfg.run_name}"
     self.log_dir.mkdir(parents=True)
     (self.log_dir / "config.json").write_text(json.dumps(
-      {"train": asdict(cfg), "task": asdict(env.cfg.task), "dt": env.step_dt}, indent=2) + "\n")
+      {"train": asdict(cfg), "task": asdict(env.cfg.task), "dt": env.step_dt,
+       "environment_backend": env.environment_backend,
+       "training_origin": self.training_origin}, indent=2) + "\n")
     self.writer = SummaryWriter(str(self.log_dir))
     self.metrics = {}
     self.metric_steps = 0
@@ -160,6 +165,9 @@ class Trainer:
 
   def load(self, path):
     ckpt = load_checkpoint(path, self.device)
+    self.training_origin = ckpt.get("training_origin", {
+      "kind": "imported_checkpoint", "checkpoint": str(Path(path).resolve()),
+      "environment_backend": ckpt.get("environment_backend", "legacy_direct")})
     if ckpt["format"] != CHECKPOINT_FORMAT:
       raise ValueError("use --warm-start to migrate a v1 model to the contact-aware dynamics")
     if (asdict(task_from_dict(ckpt["task_cfg"])) != asdict(self.env.cfg.task)
@@ -177,6 +185,9 @@ class Trainer:
   @torch.no_grad()
   def warm_start(self, path):
     ckpt = load_checkpoint(path, self.device)
+    self.training_origin = {
+      "kind": "warm_start", "checkpoint": str(Path(path).resolve()),
+      "environment_backend": ckpt.get("environment_backend", "legacy_direct")}
     self.actor.load_state_dict(ckpt["actor"])
     if ckpt["format"] == CHECKPOINT_FORMAT:
       self.wm.load_state_dict(ckpt["world_model"])
@@ -241,7 +252,7 @@ class Trainer:
                 "timeouts": trunc.sum(),
                 "linear_error": extras["transition"]["linear_error"].mean(),
                 "yaw_error": extras["transition"]["yaw_error"].mean()}
-      values.update(extras["log"])
+      values.update(extras["reward_terms"])
       # One batched read instead of synchronizing for every reward scalar.
       scalars = torch.stack([value.float() for value in values.values()]).tolist()
       for name, value in zip(values, scalars):
@@ -293,6 +304,8 @@ class Trainer:
     path = self.log_dir / f"model_{iteration}.pt"
     temporary = path.with_suffix(".tmp")
     torch.save({"format": CHECKPOINT_FORMAT, "iteration": iteration,
+                "environment_backend": self.env.environment_backend,
+                "training_origin": self.training_origin,
                 "cfg": asdict(self.cfg), "task_cfg": asdict(self.env.cfg.task), "dt": self.env.step_dt,
                 "env_steps": self.env_steps, "sim_steps": self.env.common_step_counter,
                 "obs_dim": self.obs.shape[-1], "actor": self.actor.state_dict(),
@@ -310,6 +323,8 @@ class Trainer:
     interval_env_steps = self.env_steps
     interval_iteration = self.start_it
     try:
+      if self.start_it == 0:
+        self.save(0)
       while self.buf.size < cfg.wm_window:
         self.collect()
       for iteration in range(self.start_it + 1, cfg.iterations + 1):

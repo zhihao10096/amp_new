@@ -1,6 +1,19 @@
 # Go2 速度跟踪与步态改进：当前进度
 
-## 当前状态：已完成
+## 当前目标：迁移到 ManagerBasedRLEnv 并验证收敛（进行中）
+- 用户明确目标“改成manager based的实现,并验证收敛”；当前核对仍为DirectRLEnv，旧收敛证据不能作为新实现的验收。
+- 已确认无训练进程运行、工作树仅未跟踪reference/；基线提交b6a1b7a。下一步用原生action/observation/command/reward/termination/event managers实现任务，保留SuperMimic共享可微奖励与终止前next-state，再做GPU接口检查和新环境训练收敛验证。
+- 排查关键依赖：ManagerBasedRLEnv在termination/reward后自动reset，须在manager term中捕获终止状态；原生history reset会重复首帧（旧Direct为零填充），采用原生行为并明确测试/评估该变化。原始已完成工作记录如下。
+- 已实现原生六类manager，环境不覆盖step/_reset_idx，仅提供SuperMimic状态适配。16项CPU测试通过；首次GPU检查已通过观测/奖励/80reset等主流程，但额外的动作裁剪测试发现ActionManager2.1向action term传入调用者输入view，原地clamp会修改输入且未同步manager.action，已改非原地裁剪并显式同步manager缓存，准备复测。
+- GitHub检索命中IsaacLab #6471/#5395/#4274，证实旧版CircularBuffer的tolist同步热点及首帧回填行为；先使用原生实现测实际吞吐，再决定是否需性能适配。
+- 修正后GPU检查PASS：原生step/reset、80reset/1强制翻倒/144指令切换、计时器/观测/奖励一致、裁剪不改调用者输入且各manager缓存一致、实际修改RewardManager权重会影响step返回。
+- 32环境短跑12轮并恢复到16轮完成，核对actor/critic/WM均实际更新且全部有限，恢复模型2秒评估完成。日志`logs/manager/smoke.log`、`resume.log`、`smoke_eval.json`。
+- 已记录新环境验收标准`MANAGER_CONVERGENCE.md`：三个间隔1000更新的检查点连续速度/步态达标，最终带噪完整复测/录像；正式训练必须随机初始化。新checkpoint记录backend/origin，训练启动时保存model_0作为起点证据。
+- 已启动8192环境随机初始化正式训练，会话99454，日志`logs/manager/train.log`，目标先跑6000轮/每1000保存；WM4096×4、imag8192、warmup800+critic200、actor_lr_scale.3、action/explore noise .1/.5。尚未证明收敛；后续先核对吞吐/学习趋势，再独立评估检查点。
+- 实际正式目录`logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/`，PID1751728，已保存model_0/model_1000并进入actor更新，完整吞吐约82k转移/s；GPU采样会话9533写`logs/manager/gpu.csv`。当前1100轮附近仍为学习初期，速度误差约.70/.51，不能当收敛。
+- 新增纯Python `validation.py` 及 `scripts/check_convergence.py`，统一20/7指令并校验完整覆盖、三个1000间隔checkpoint、final noise、backend与实际随机初始化/网络/优化器更新。23项CPU测试、compileall、whitespace通过。README已区分旧Direct历史结果，Manager新记录尚无收敛结论。
+
+## 上一阶段：步态改进已完成
 - Isaac Lab 迁移已提交 `4ca881b`；原速度收敛验证见 `CONVERGENCE.md`，旧模型 `checkpoints/go2_velocity_converged.pt` 保留。
 - 用户本轮要求参考 Unitree Go2 奖励改善小碎步，并提高并行环境数以充分使用 GPU。
 - 已实现奖励、扩展世界模型/回放，完成真实 GPU 训练、步态/速度验收及前后录像；所有训练、评估、录像进程已退出。
@@ -42,3 +55,11 @@
 
 ## 后续
 - 本轮授权工作已完成；无运行中训练/评估进程。复现参数、评估标准和局限见 `GAIT.md` / `README.md`。
+
+## 2026-11-03 21:15 独立评估与训练决策
+- `scripts/eval.py` 在新的 `isaaclab_manager_based_v1` 环境复测 `checkpoints/go2_velocity_gait.pt`：64环境、固定(1,0,0)、5秒无摔倒，平均vx 0.902 m/s，说明旧步态策略与Manager动力学兼容。
+- `logs/manager/diagnostic_2000.json` 显示从零训练 `model_2000.pt` 已退化为近似静止：前进速度约0.0006 m/s，步频和离地时间均为0；因此不能把2000轮当作收敛证据。
+- 8192环境采样显存约14.3/16GB，继续采用8192作为并行度上限；下一步继续随机初始化训练并在后续检查点复测，必要时以已验证旧步态检查点做回退/暖启动。
+- 21:21 继续训练从 `model_2000` 恢复时在首次 imagination rollout OOM（8192 env + imag_batch 8192，显存约14.3GB后仅52MiB可用）；判定为想象批次峰值而非环境并行数问题。保留8192并行环境，后续应将imag_batch降至4096后从2000恢复。
+- 21:24 用户要求暂停并交接；当前无训练/评估进程。保留 `logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/model_2000.pt`、`model_2025.pt`、`logs/manager/diagnostic_2000.json` 及旧可用步态模型 `checkpoints/go2_velocity_gait.pt`。
+- 用户于 2026-11-03 21:27 要求停止继续推进；已中断 `8192 env / wm_batch 3072 / imag_batch 4096` 的恢复训练，未产生新的收敛检查点。目标保持未完成，等待后续明确指示。

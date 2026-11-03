@@ -6,28 +6,7 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
-CASES = (
-  ("stand", (0., 0., 0.)),
-  ("forward_slow", (0.5, 0., 0.)),
-  ("forward", (1., 0., 0.)),
-  ("forward_fast", (1.5, 0., 0.)),
-  ("backward_slow", (-0.5, 0., 0.)),
-  ("backward", (-1., 0., 0.)),
-  ("left_slow", (0., 0.3, 0.)),
-  ("right_slow", (0., -0.3, 0.)),
-  ("left", (0., 0.6, 0.)),
-  ("right", (0., -0.6, 0.)),
-  ("turn_left_slow", (0., 0., 0.5)),
-  ("turn_right_slow", (0., 0., -0.5)),
-  ("turn_left", (0., 0., 1.)),
-  ("turn_right", (0., 0., -1.)),
-  ("mixed_left", (0.8, 0.3, 0.5)),
-  ("mixed_right", (0.8, -0.3, -0.5)),
-  ("mixed_backward_left", (-0.7, 0.3, 0.5)),
-  ("mixed_backward_right", (-0.7, -0.3, -0.5)),
-  ("upper_corner", (1.5, 0.6, 1.)),
-  ("lower_corner", (-1., -0.6, -1.)),
-)
+from go2_supermimic.validation import FIXED_CASES as CASES
 
 
 def main():
@@ -129,6 +108,8 @@ def main():
         random.append(measured)
         print(f"Random seed {seed}: {measured['overall']}", flush=True)
       result = {"checkpoint": str(Path(path).resolve()), "iteration": checkpoint["iteration"],
+                "environment_backend": env.environment_backend,
+                "checkpoint_backend": checkpoint.get("environment_backend", "legacy_direct"),
                 "seconds": steps * env.step_dt, "settle_seconds": settling * env.step_dt,
                 "observation_noise": cfg.task.observation_noise,
                 "environments": env.num_envs, "fixed": fixed, "random": random}

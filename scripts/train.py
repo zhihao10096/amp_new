@@ -49,7 +49,7 @@ def main():
       for name in ("actor_hidden", "critic_hidden", "wm_hidden"):
         setattr(cfg, name, tuple(ckpt["cfg"][name]))
     if cfg.robot_usd:
-      env_cfg.robot.spawn.usd_path = cfg.robot_usd
+      env_cfg.scene.robot.spawn.usd_path = cfg.robot_usd
     env = gym.make(cfg.task, cfg=env_cfg).unwrapped
     Trainer(cfg, env).run()
   except Exception:

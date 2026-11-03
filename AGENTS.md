@@ -4,7 +4,7 @@
 
 The Python package is `go2_supermimic/`. Shared simulator-independent commands,
 observations, rewards and terminations live in `velocity.py`; Isaac Lab task
-configuration and DirectRLEnv live in `env/`; the SuperMimic state adapter, replay
+configuration, manager terms and ManagerBasedRLEnv adapter live in `env/`; the SuperMimic state adapter, replay
 buffer, world model, imagined rollouts and learner live in `supermimic/`.
 Use `scripts/train.py` and `scripts/eval.py` as entry points. Tests are in `tests/`.
 The robot is Isaac Lab's Unitree Go2 USD asset.
