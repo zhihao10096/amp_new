@@ -14,6 +14,7 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
 from go2_supermimic import velocity as v
+from go2_supermimic.amp import AMPDiscriminator, state_features
 from go2_supermimic.supermimic.buffer import ReplayBuffer
 from go2_supermimic.supermimic.curriculum import curriculum_fraction, training_task
 from go2_supermimic.supermimic.imagine import CRITIC_DIM, ImagineCfg, Imagination
@@ -68,13 +69,23 @@ class TrainCfg:
   reward_curriculum_start: int = 0
   reward_curriculum_end: int = 0
   """Zero disables the curriculum; otherwise reach final rewards at this iteration."""
+  amp_motion_files: str = ""
+  amp_hidden: tuple[int, ...] = (512, 256)
+  amp_weight: float = .5
+  amp_lr: float = 1e-4
+  amp_batch: int = 2048
+  amp_updates: int = 2
+  amp_grad_penalty: float = 10.
+  amp_ramp_iterations: int = 1000
+  amp_reference_reset_fraction: float = .5
 
   def __post_init__(self):
     if self.matmul_precision not in ("highest", "high", "medium"):
       raise ValueError("matmul_precision must be highest, high or medium")
     for name in ("num_envs", "iterations", "collect_steps", "buffer_len", "wm_window", "wm_batch",
                  "wm_updates", "horizon", "imag_batch", "critic_epochs", "critic_minibatches",
-                 "log_interval", "save_interval", "lr_decay_iterations"):
+                 "log_interval", "save_interval", "lr_decay_iterations", "amp_batch",
+                 "amp_updates", "amp_ramp_iterations"):
       if getattr(self, name) <= 0:
         raise ValueError(f"{name} must be positive")
     if self.buffer_len < self.wm_window:
@@ -89,6 +100,9 @@ class TrainCfg:
       raise ValueError("warm_start and resume are mutually exclusive")
     if not 0 <= self.reward_curriculum_start <= self.reward_curriculum_end:
       raise ValueError("reward curriculum requires 0 <= start <= end")
+    if (self.amp_weight < 0 or self.amp_grad_penalty < 0 or self.amp_lr <= 0
+        or not 0 <= self.amp_reference_reset_fraction <= 1):
+      raise ValueError("invalid AMP reward, learning rate, penalty or reset fraction")
 
 
 class Actor(nn.Module):
@@ -150,10 +164,14 @@ class Trainer:
     self.opt_wm = torch.optim.Adam(self.wm.parameters(), lr=cfg.lr)
     self.opt_actor = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr, betas=(0.9, 0.95))
     self.opt_critic = torch.optim.Adam(self.critic.parameters(), lr=cfg.lr)
+    self.amp = AMPDiscriminator(cfg.amp_hidden).to(self.device) if env.cfg.amp_enabled else None
+    self.opt_amp = (torch.optim.Adam(self.amp.parameters(), lr=cfg.amp_lr, weight_decay=1e-4)
+                    if self.amp is not None else None)
+    self.env.amp_discriminator = self.amp
     self.buf = ReplayBuffer(cfg.num_envs, cfg.buffer_len, self.obs.shape[-1], self.device)
     self.imag = Imagination(
       ImagineCfg(horizon=cfg.horizon, dt=env.step_dt, compile=cfg.compile_imagination),
-      env.cfg.task, env.consts)
+      env.cfg.task, env.consts, amp=self.amp)
     self.ou = torch.zeros(cfg.num_envs, v.NUM_JOINTS, device=self.device)
     self.explore = torch.arange(cfg.num_envs, device=self.device) < int(cfg.explore_frac * cfg.num_envs)
     self.start_it = self.env_steps = 0
@@ -170,6 +188,8 @@ class Trainer:
     (self.log_dir / "config.json").write_text(json.dumps(
       {"train": asdict(cfg), "task": asdict(env.cfg.task), "dt": env.step_dt,
        "environment_backend": env.environment_backend,
+       "robot_kind": env.robot_kind,
+       "amp_motion_metadata": env.amp_motion.metadata if self.amp is not None else None,
        "training_origin": self.training_origin}, indent=2) + "\n")
     self.writer = SummaryWriter(str(self.log_dir))
     self.metrics = {}
@@ -193,9 +213,18 @@ class Trainer:
       if term.weight != weight:
         term.weight = weight
         self.env.reward_manager.set_term_cfg(name, term)
+    if getattr(self, "amp", None) is not None:
+      self.amp_fraction = min(1., iteration / cfg.amp_ramp_iterations)
+      weight = cfg.amp_weight * self.amp_fraction
+      self.imag.amp_weight.fill_(weight)
+      term = self.env.reward_manager.get_term_cfg("amp_style")
+      term.weight = weight
+      self.env.reward_manager.set_term_cfg("amp_style", term)
 
   def load(self, path):
     ckpt = load_checkpoint(path, self.device)
+    if ckpt.get("robot_kind", "go2") != getattr(self.env, "robot_kind", "go2"):
+      raise ValueError("resume requires the same robot; use warm-start for transfer")
     self.training_origin = ckpt.get("training_origin", {
       "kind": "imported_checkpoint", "checkpoint": str(Path(path).resolve()),
       "environment_backend": ckpt.get("environment_backend", "legacy_direct")})
@@ -208,6 +237,11 @@ class Trainer:
       model.load_state_dict(ckpt[name])
     for name, opt in (("opt_actor", self.opt_actor), ("opt_critic", self.opt_critic), ("opt_wm", self.opt_wm)):
       opt.load_state_dict(ckpt[name])
+    if getattr(self, "amp", None) is not None:
+      if ckpt.get("amp_motion_metadata") != self.env.amp_motion.metadata:
+        raise ValueError("AMP resume requires identical motion data and temporal split")
+      self.amp.load_state_dict(ckpt["amp"])
+      self.opt_amp.load_state_dict(ckpt["opt_amp"])
     if self.cfg.continue_run:
       self.start_it, self.env_steps = ckpt["iteration"], ckpt["env_steps"]
       self.env.common_step_counter = ckpt["sim_steps"]
@@ -284,6 +318,8 @@ class Trainer:
                 "linear_error": extras["transition"]["linear_error"].mean(),
                 "yaw_error": extras["transition"]["yaw_error"].mean()}
       values.update(extras["reward_terms"])
+      if self.amp is not None:
+        values["amp_real_style"] = extras["amp_style"].mean()
       # One batched read instead of synchronizing for every reward scalar.
       scalars = torch.stack([value.float() for value in values.values()]).tolist()
       for name, value in zip(values, scalars):
@@ -307,15 +343,32 @@ class Trainer:
       losses.append(loss.item())
     return sum(losses) / len(losses)
 
+  def fit_amp(self):
+    metrics = {}
+    for _ in range(self.cfg.amp_updates):
+      before, after = self.buf.sample_pairs(self.cfg.amp_batch)
+      with torch.no_grad():
+        policy = (state_features(before, self.env.consts.default_q),
+                  state_features(after, self.env.consts.default_q))
+        expert = self.env.amp_motion.sample_pairs(self.cfg.amp_batch, train=True)
+      loss, values = self.amp.loss(expert, policy, self.cfg.amp_grad_penalty)
+      self._update(loss, self.amp, self.opt_amp)
+      values["amp_loss"] = loss.detach()
+      for key, value in values.items():
+        metrics[key] = metrics.get(key, 0.) + value.item() / self.cfg.amp_updates
+    metrics["amp_reward_fraction"] = self.amp_fraction
+    return metrics
+
   def improve_policy(self, update_actor=True):
-    for model in (self.wm, self.critic):
+    frozen = (self.wm, self.critic) + ((self.amp,) if self.amp is not None else ())
+    for model in frozen:
       model.requires_grad_(False)
     try:
       objective, data = self.imag.rollout(
         self.wm, self.actor, self.critic, self.buf.sample_states(self.cfg.imag_batch))
       norm = self._update(-objective.mean(), self.actor, self.opt_actor) if update_actor else 0
     finally:
-      for model in (self.wm, self.critic):
+      for model in frozen:
         model.requires_grad_(True)
     targets = self.imag.gae_targets(self.critic, data).reshape(-1)
     inputs = data["critic_in"][:, :-1].reshape(-1, CRITIC_DIM)
@@ -334,7 +387,8 @@ class Trainer:
   def save(self, iteration):
     path = self.log_dir / f"model_{iteration}.pt"
     temporary = path.with_suffix(".tmp")
-    torch.save({"format": CHECKPOINT_FORMAT, "iteration": iteration,
+    payload = {"format": CHECKPOINT_FORMAT, "iteration": iteration,
+                "robot_kind": self.env.robot_kind,
                 "environment_backend": self.env.environment_backend,
                 "training_origin": self.training_origin,
                 "reward_curriculum_fraction": self.reward_fraction,
@@ -343,7 +397,12 @@ class Trainer:
                 "obs_dim": self.obs.shape[-1], "actor": self.actor.state_dict(),
                 "critic": self.critic.state_dict(), "world_model": self.wm.state_dict(),
                 "opt_actor": self.opt_actor.state_dict(), "opt_critic": self.opt_critic.state_dict(),
-                "opt_wm": self.opt_wm.state_dict()}, temporary)
+                "opt_wm": self.opt_wm.state_dict()}
+    if self.amp is not None:
+      payload.update(amp=self.amp.state_dict(), opt_amp=self.opt_amp.state_dict(),
+                     amp_motion_metadata=self.env.amp_motion.metadata,
+                     amp_reward_fraction=self.amp_fraction)
+    torch.save(payload, temporary)
     temporary.replace(path)
     print(f"Saved {path}", flush=True)
     return path
@@ -371,6 +430,8 @@ class Trainer:
         self.collect()
         stats = {"wm_loss": self.fit_world_model(),
                  "reward_curriculum_fraction": self.reward_fraction}
+        if self.amp is not None and iteration > cfg.warmup_iterations:
+          stats.update(self.fit_amp())
         if iteration > cfg.warmup_iterations:
           stats.update(self.improve_policy(update_actor=iteration > actor_start))
         if iteration % cfg.log_interval == 0 or iteration == cfg.iterations:

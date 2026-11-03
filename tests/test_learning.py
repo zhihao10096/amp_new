@@ -27,6 +27,8 @@ def test_replay_wraparound_preserves_terminal_transitions_and_masks_resets():
   seeds = buf.sample_states(8)
   assert seeds["obs"].dtype == torch.float32
   torch.testing.assert_close(seeds["gait"][:, 0], seeds["s"][:, 0])
+  before, after = buf.sample_pairs(128)
+  torch.testing.assert_close(after - before, torch.full_like(before, .5))
 
 
 def test_running_norm_merges_batches_correctly():

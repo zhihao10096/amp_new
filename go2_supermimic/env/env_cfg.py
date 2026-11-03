@@ -1,4 +1,4 @@
-"""Manager-based Isaac Lab configuration for Go2 velocity tracking."""
+"""Manager-based Isaac Lab configurations for Go2 tracking and A1 AMP."""
 
 from dataclasses import fields
 
@@ -12,10 +12,11 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg
-from isaaclab_assets import UNITREE_GO2_CFG
+from isaaclab_assets import UNITREE_A1_CFG, UNITREE_GO2_CFG
 
+from go2_supermimic.amp import DEFAULT_A1_MOTIONS
 from go2_supermimic.env import mdp
-from go2_supermimic.velocity import VelocityTaskCfg
+from go2_supermimic.velocity import CommandCfg, VelocityTaskCfg
 
 
 @configclass
@@ -83,6 +84,13 @@ class TerminationsCfg:
 
 @configclass
 class Go2VelocityEnvCfg(ManagerBasedRLEnvCfg):
+  robot_kind: str = "go2"
+  foot_radius: float = .022
+  undesired_contact_patterns: tuple[str, ...] = ("Head_.*", ".*_hip", ".*_thigh", ".*_calf")
+  amp_enabled: bool = False
+  amp_motion_files: str = ""
+  amp_reference_reset_fraction: float = .5
+  amp_weight: float = .5
   decimation = 4
   episode_length_s = 20.0
   sim = sim_utils.SimulationCfg(
@@ -116,3 +124,23 @@ class Go2VelocityEnvCfg(ManagerBasedRLEnvCfg):
         params={"name": item.name})
       for item in fields(self.task.rewards)
     }
+    if self.amp_enabled:
+      self.rewards["amp_style"] = RewardTermCfg(func=mdp.amp_style_reward, weight=self.amp_weight)
+
+
+@configclass
+class A1SceneCfg(Go2SceneCfg):
+  robot = UNITREE_A1_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+
+@configclass
+class A1AmpEnvCfg(Go2VelocityEnvCfg):
+  robot_kind = "a1"
+  foot_radius = .02
+  undesired_contact_patterns = ("trunk", ".*_hip", ".*_thigh", ".*_calf")
+  scene = A1SceneCfg(num_envs=1024, env_spacing=4.0, replicate_physics=True)
+  amp_enabled = True
+  amp_motion_files = DEFAULT_A1_MOTIONS
+  task = VelocityTaskCfg(
+    swing_height=.058,
+    commands=CommandCfg(lin_vel_x=(0., 1.5), lin_vel_y=(-.3, .3), ang_vel_z=(-1., 1.)))

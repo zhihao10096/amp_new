@@ -1,4 +1,4 @@
-"""Train Go2 velocity tracking with Isaac Lab and SuperMimic."""
+"""Train Go2 Manager velocity tracking or A1 AMP with Isaac Lab/SuperMimic."""
 
 import argparse
 import sys
@@ -31,9 +31,17 @@ def main():
     from go2_supermimic.supermimic.train import load_checkpoint
     resume_checkpoint = load_checkpoint(args.resume, "cpu")
     values = restore_curriculum_options(values, resume_checkpoint["cfg"], sys.argv[1:])
+    supplied = {x.split("=", 1)[0] for x in sys.argv[1:]}
+    for name in values:
+      if (name == "task" or name.startswith("amp_")) and (
+          "--" + name.replace("_", "-") not in supplied):
+        values[name] = resume_checkpoint["cfg"].get(name, values[name])
+  if values["task"] == "A1-AMP-Flat" and not values["amp_motion_files"]:
+    from go2_supermimic.amp import DEFAULT_A1_MOTIONS
+    values["amp_motion_files"] = DEFAULT_A1_MOTIONS
   cfg = TrainCfg(**values)
-  if cfg.task != "Go2-Velocity-Flat":
-    parser.error("the available task is Go2-Velocity-Flat")
+  if cfg.task not in ("Go2-Velocity-Flat", "A1-AMP-Flat"):
+    parser.error("the available tasks are Go2-Velocity-Flat and A1-AMP-Flat")
   launcher = AppLauncher(args)
   env = None
   try:
@@ -41,14 +49,18 @@ def main():
     import torch
 
     import go2_supermimic.env  # registers the Isaac Lab task after SimulationApp starts
-    from go2_supermimic.env.env_cfg import Go2VelocityEnvCfg
+    from go2_supermimic.env.env_cfg import A1AmpEnvCfg, Go2VelocityEnvCfg
     from go2_supermimic.supermimic.train import Trainer, load_checkpoint, task_from_dict
 
     torch.set_float32_matmul_precision(cfg.matmul_precision)
-    env_cfg = Go2VelocityEnvCfg()
+    env_cfg = A1AmpEnvCfg() if cfg.task == "A1-AMP-Flat" else Go2VelocityEnvCfg()
     env_cfg.scene.num_envs = cfg.num_envs
     env_cfg.sim.device = args.device
     env_cfg.seed = cfg.seed
+    if env_cfg.amp_enabled:
+      env_cfg.amp_motion_files = cfg.amp_motion_files
+      env_cfg.amp_weight = cfg.amp_weight
+      env_cfg.amp_reference_reset_fraction = cfg.amp_reference_reset_fraction
     if cfg.resume or cfg.warm_start:
       ckpt = (resume_checkpoint if resume_checkpoint is not None
               else load_checkpoint(cfg.warm_start, "cpu"))

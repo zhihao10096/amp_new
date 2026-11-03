@@ -1,0 +1,42 @@
+{
+  "source_repository": "https://github.com/fan-ziqi/rl_amp",
+  "source_commit": "b4666fa99066ac5c8006b700bf7cc6bc2471232b",
+  "source_directory": "datasets/mocap_motions_a1",
+  "keypoint_source": "https://github.com/sebastianstarke/AI4Animation",
+  "data_license": "CC-BY-NC-4.0 (see LICENSE.ai4animation)",
+  "reference_repository_license": "Apache-2.0 (see LICENSE.rl_amp)",
+  "files": [
+    {
+      "file": "trot1.txt",
+      "sha256": "36d0f22a1fe87576d3a8324bfe5f1c94f6d6b2f0e3c626c2b69fd182edf51bdf",
+      "frames": 147,
+      "frame_dt": 0.01677,
+      "weight": 1,
+      "source_keypoints": "dog_walk03_joint_pos.txt"
+    },
+    {
+      "file": "pace1.txt",
+      "sha256": "9ebc6bab549fcaa55842a06cf5415def3963b91ee481751a6a0bbf1ce49517f9",
+      "frames": 199,
+      "frame_dt": 0.01677,
+      "weight": 1,
+      "source_keypoints": "dog_walk00_joint_pos.txt"
+    },
+    {
+      "file": "left_turn1.txt",
+      "sha256": "1c7e1fb05516e020b08d2b16811b3430ca3b10265e2610cf1d2599ab1d490fad",
+      "frames": 100,
+      "frame_dt": 0.01677,
+      "weight": 1.5,
+      "source_keypoints": "dog_walk09_joint_pos.txt"
+    },
+    {
+      "file": "right_turn1.txt",
+      "sha256": "64b67007e7f8e61cfe7b264d7a3e13374c9a7af54efb239270550aa9eaa0f2ce",
+      "frames": 110,
+      "frame_dt": 0.01677,
+      "weight": 1.5,
+      "source_keypoints": "dog_walk09_joint_pos.txt"
+    }
+  ]
+}

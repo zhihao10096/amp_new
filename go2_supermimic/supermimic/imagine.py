@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import torch
 
 from go2_supermimic import velocity as v
+from go2_supermimic.amp import AMPDiscriminator
 
 CRITIC_DIM = v.STATE_DIM + v.GAIT_DIM + v.NUM_JOINTS + 4
 
@@ -19,8 +20,11 @@ class ImagineCfg:
 
 
 class Imagination:
-  def __init__(self, cfg: ImagineCfg, task: v.VelocityTaskCfg, consts: v.RobotConsts):
+  def __init__(self, cfg: ImagineCfg, task: v.VelocityTaskCfg, consts: v.RobotConsts,
+               amp: AMPDiscriminator | None = None):
     self.cfg, self.task, self.consts = cfg, task, consts
+    self.amp = amp
+    self.amp_weight = consts.default_q.new_zeros(())
     self.reward_parameters = consts.default_q.new_empty(len(v.REWARD_NAMES) + 1)
     self.update_reward_parameters()
     self._step_fn = torch.compile(self._step, dynamic=False) if cfg.compile else self._step
@@ -43,6 +47,9 @@ class Imagination:
     reward, _ = v.reward(s, next_s, action, previous, commands,
                          self.consts, task, cfg.dt, death, gait,
                          self.reward_parameters if cfg.compile else None)
+    if self.amp is not None:
+      reward = reward + self.amp_weight * cfg.dt * self.amp.reward(
+        s, next_s, self.consts.default_q, commands)
     gait, _ = v.advance_gait(gait, s[:, v.CONTACT], next_s[:, v.CONTACT], cfg.dt)
     commands, remaining = v.advance_commands(commands, remaining, cfg.dt, task.commands)
     frame = v.obs_frame(next_s, action, commands, task.observation_noise)

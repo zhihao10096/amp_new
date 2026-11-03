@@ -52,3 +52,11 @@ class ReplayBuffer:
     return {"s": self.s[env, idx], "a_prev": self.a_prev[env, idx],
             "obs": self.obs[env, idx].float(), "commands": self.commands[env, idx],
             "command_time": self.command_time[env, idx], "gait": self.gait[env, idx]}
+
+  def sample_pairs(self, batch):
+    """Use stored pre-reset terminal states, never the next episode's reset."""
+    if not self.size:
+      raise ValueError("cannot sample empty replay")
+    env = torch.randint(self.n, (batch,), device=self.device)
+    idx = self._physical(torch.randint(self.size, (batch,), device=self.device))
+    return self.s[env, idx], self.next_s[env, idx]

@@ -10,4 +10,4 @@
 - 代码沿用两空格缩进、类型标注和批量 Torch 操作，保持 device/dtype；共享观测/奖励等纯 Torch 代码不得依赖 Isaac Lab。
 - 仿真相关导入须在 AppLauncher 启动后进行。提交代码变更前运行 CPU 测试；仿真变更还需真实 GPU 更新、保存/恢复和评估，覆盖真实/想象接口、终止状态及 reset。短跑不能证明收敛。
 
-文档入口：[README.md](README.md)（用途/命令/结构）、[MANAGER_CONVERGENCE.md](MANAGER_CONVERGENCE.md)（新环境验收）、[CONVERGENCE.md](CONVERGENCE.md) / [GAIT.md](GAIT.md)（历史基线）。
+文档入口：[README.md](README.md)（用途/命令/结构）、[MANAGER_CONVERGENCE.md](MANAGER_CONVERGENCE.md)（Manager验收）、[AMP_CONVERGENCE.md](AMP_CONVERGENCE.md)（A1 AMP数据/指标/验收）、[CONVERGENCE.md](CONVERGENCE.md) / [GAIT.md](GAIT.md)（历史基线）。

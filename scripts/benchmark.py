@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import traceback
 from pathlib import Path
 
 from isaaclab.app import AppLauncher
@@ -30,20 +31,19 @@ def main():
     import torch
 
     import go2_supermimic.env
-    from go2_supermimic.env.env_cfg import Go2VelocityEnvCfg
-    from go2_supermimic.supermimic.train import Actor, load_checkpoint, task_from_dict
+    from go2_supermimic.amp_validation import A1_FIXED_CASES
+    from go2_supermimic.env.factory import attach_evaluation_amp, evaluation_config
+    from go2_supermimic.supermimic.train import Actor, load_checkpoint
 
     checkpoints = [load_checkpoint(path, args.device) for path in args.checkpoints]
-    cfg = Go2VelocityEnvCfg()
-    cfg.scene.num_envs = len(CASES) * args.repeats
-    cfg.sim.device = args.device
+    cases = A1_FIXED_CASES if checkpoints[0].get("robot_kind") == "a1" else CASES
+    task_name, cfg = evaluation_config(
+      checkpoints[0], len(cases) * args.repeats, args.device, args.observation_noise)
     cfg.seed = args.seeds[0]
-    cfg.task = task_from_dict(checkpoints[0]["task_cfg"])
-    cfg.task.observation_noise = args.observation_noise
-    env = gym.make("Go2-Velocity-Flat", cfg=cfg).unwrapped
+    env = gym.make(task_name, cfg=cfg).unwrapped
     steps = round(args.seconds / env.step_dt)
     settling = round(args.settle_seconds / env.step_dt)
-    commands = torch.tensor([cmd for _, cmd in CASES], device=env.device).repeat_interleave(args.repeats, 0)
+    commands = torch.tensor([cmd for _, cmd in cases], device=env.device).repeat_interleave(args.repeats, 0)
     results = []
 
     @torch.inference_mode()
@@ -90,12 +90,14 @@ def main():
         result["cases"] = {
           name: {"command": list(cmd),
                  **summarize(slice(i * args.repeats, (i + 1) * args.repeats))}
-          for i, (name, cmd) in enumerate(CASES)}
+          for i, (name, cmd) in enumerate(cases)}
       return result
 
     for path, checkpoint in zip(args.checkpoints, checkpoints):
-      if checkpoint["task_cfg"] != checkpoints[0]["task_cfg"] or checkpoint["dt"] != env.step_dt:
+      if (checkpoint["task_cfg"] != checkpoints[0]["task_cfg"] or checkpoint["dt"] != env.step_dt
+          or checkpoint.get("robot_kind", "go2") != env.robot_kind):
         raise ValueError("benchmark checkpoints must use identical task settings")
+      attach_evaluation_amp(env, checkpoint)
       actor = Actor(checkpoint["obs_dim"], tuple(checkpoint["cfg"]["actor_hidden"])).to(env.device)
       actor.load_state_dict(checkpoint["actor"])
       actor.eval()
@@ -110,6 +112,7 @@ def main():
       result = {"checkpoint": str(Path(path).resolve()), "iteration": checkpoint["iteration"],
                 "environment_backend": env.environment_backend,
                 "checkpoint_backend": checkpoint.get("environment_backend", "legacy_direct"),
+                "robot_kind": env.robot_kind,
                 "seconds": steps * env.step_dt, "settle_seconds": settling * env.step_dt,
                 "observation_noise": cfg.task.observation_noise,
                 "environments": env.num_envs, "fixed": fixed, "random": random}
@@ -118,6 +121,9 @@ def main():
       output = Path(args.output)
       output.parent.mkdir(parents=True, exist_ok=True)
       output.write_text(json.dumps(results, indent=2) + "\n")
+  except Exception:
+    traceback.print_exc()
+    raise
   finally:
     if env is not None:
       env.close()

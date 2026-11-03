@@ -1,8 +1,13 @@
-# Go2 SuperMimic：Isaac Lab 速度跟踪
+# SuperMimic：Go2 Manager 与 A1 AMP 平地行走
 
 当前目标、计划和开发机实际状态见 [GOAL.md](GOAL.md)、[PLAN.md](PLAN.md)、[STATUS.md](STATUS.md)。
 新Manager环境已通过预先记录的独立验收：7000/8000/9000三个相隔1000迭代检查点完整速度和步态全部达标，最终加噪、录像及来源/更新审计通过。
 最终模型 `checkpoints/go2_manager_converged.pt`，报告 [Manager验收记录](MANAGER_CONVERGENCE.md)，侧面对比 `videos/manager_gait_comparison.mp4`。旧训练产物仍保留于logs/videos。
+
+当前推进 `A1-AMP-Flat`：Isaac Lab 原生 A1、平地、A1 动作数据和 AMP 风格奖励，
+沿用 SuperMimic 世界模型与可微想象更新 actor，全程不用 PPO。数据、时间留出与独立收敛
+标准见 [A1 AMP 验收](AMP_CONVERGENCE.md)；实现验证与实际训练状态见 STATUS.md。
+后续为 G1 平地 walk。
 
 使用 **Isaac Lab / Isaac Sim / PhysX** 实现 Unitree Go2 平地速度跟踪。任务为
 `Go2-Velocity-Flat`，输入机体系前进速度 `vx`、侧向速度 `vy`（m/s）与转向角速度
@@ -47,6 +52,30 @@ python -m pip install -e '.[isaac,dev]' --extra-index-url https://pypi.nvidia.co
 如果终端自动加载 ROS，先运行 `unset PYTHONPATH`，防止 ROS 插件污染虚拟环境。
 
 ## 训练
+
+运行 A1 AMP：
+
+```bash
+python -m pytest tests
+python tests/check_amp_isaaclab.py --headless
+python scripts/train.py --headless --task A1-AMP-Flat \
+  --warm-start checkpoints/go2_manager_converged.pt \
+  --matmul-precision highest --compile-imagination --run-name a1_amp
+```
+
+默认读取项目内受 Git 管理的 `assets/motions/a1/` 中的 trot1、pace1、left_turn1、
+right_turn1，无需 reference 目录即可运行 A1 AMP；[数据来源及许可](assets/motions/a1/README.md)
+和 manifest 保存来源 commit 与 SHA256。专家与策略共用原生 A1 FK，
+判别器使用相邻两帧 43 维状态及 LSGAN/专家梯度惩罚；真实与想象共享可微风格奖励。
+`--amp-weight` 为每秒奖励权重，`--amp-ramp-iterations` 控制初期渐进，
+`--amp-reference-reset-fraction` 控制参考重置比例，评估始终普通站立起步。
+跨机器人热启动保留 actor/世界模型，其余网络及优化器新建；也可移除 warm-start 随机初始化。
+保存包含判别器、优化器、机器人类型及运动数据 SHA256/split。
+CLI 恢复自动继承 A1 任务与 AMP 配置；评估脚本也按 checkpoint 选择 A1，
+gait_eval 额外输出与时间留出专家的独立风格距离。GPU 并行数仍需按实测吞吐和质量选择，
+以上命令不代表已经收敛。
+
+Go2 Manager 的历史训练入口：
 
 ```bash
 python -m pytest tests
@@ -166,6 +195,7 @@ go2_supermimic/
   supermimic/       状态适配、回放、世界模型、想象滚动和训练器
 scripts/            train.py、eval.py、benchmark.py、gait_eval.py
 tests/              数值/梯度回归测试及显式 GPU 集成检查
+AMP_CONVERGENCE.md  A1 AMP动作数据、独立留出指标及验收标准
 PROGRESS.md         迁移进度及实际验证记录
 CONVERGENCE.md      收敛标准、测量结果及本地模型位置
 MANAGER_CONVERGENCE.md  Manager based 迁移、随机初始化训练及新收敛验收
