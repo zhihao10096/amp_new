@@ -63,3 +63,20 @@ G1三点独立速度/步态/留出风格、加噪、录像及审计全部要求�
 用户指出A1已能迈步而G1不能。已证实G1落入站立局部解，尚无足够证据将其归因为双足本身或某一个组件。A1的AMP特征（amp.py:48）包含关节角、足端位置、机身线/角速度、关节速度和高度；G1（g1.py:168）沿参考只使用角速度、关节角和关节速度，因此风格奖励不能直接区分根部平移/足端位置。参考四帧而当前两帧也属于需验证的时间约束差异。静态参考姿态曾获style≈1，是姿态捷径证据；不是删掉/加上某特征即可收敛的因果证明。
 
 双足需要重心转移、单支撑和落脚协调，可能放大探索和动态价值估计不足；这是机制假设。映射、严重RSI穿透、仅训练不足等既有排查见G1_CONVERGENCE；现有真实TD=0/.5短程对照保持原配置，先看真实步频/稳定性和完整速度结果。若失败，再设计独立的风格特征/历史约束对照，避免在同一实验中叠加改动。
+
+来源审计补充：A1/G1来源差异核实：logs/amp_a1/convergence_report.json的training_origin.kind=warm_start，actor/WM来源checkpoints/go2_manager_converged.pt（SHA256 07fc3f6e0e6801a3e60ab591be25dbeb3071c930809f847dd14284477dbfa9dd）；G1 R1–R3是随机初始化。A1成功不能单独证明当前G1冷启动能形成步态。待当前0/.5对照结束，若无真实迈步收益，优先诊断从零步态启动/动态数据覆盖，再决定分阶段基础行走预训练；维持WM/AMP、禁PPO、正式随机来源及原验收。
+
+进一步核实A1初始model_0已具备迈步：formal_r1_baseline_gait.json在1/1.5m/s指令下实际vx=.94146/1.43389、步频3.4181/3.4889Hz、零摔倒；G1随机model_0约115–116摔且步频0。来源差异比单凭机器人类别更直接。
+
+修正旧诊断表述：reference_behavior_diagnostic_r2的hold是固定参考关节目标，不是完全静止状态；其平均vx=.501、2秒128/128摔倒而style=.99978。它证明高风格分数不保证稳定步行，不能单独证明D只看静态姿态。
+
+## 与Go2从零收敛流程的对照决定
+
+用户指出Go2可以从零收敛，因此“G1随机初始化”不能作为充分解释。配置审计显示：Go2 Manager从随机model_0开始，先在`reward_curriculum_start=6000`到`end=9000`逐步引入步态约束；G1 R1–R3从随机初始化但未启用奖励课程，直接使用最终G1 walk奖励，同时AMP从第一阶段参与。A1则从Go2 Manager warm-start actor/世界模型。
+
+已新增同机器人`G1-Velocity-Flat`配置，关闭AMP但保留G1平地资产、奖励、PD和SuperMimic接口，用于复现Go2的“先基础速度/步态、再AMP”流程。若冷启动策略能走，将其actor/世界模型warm-start到G1 AMP并重新初始化critic、判别器和优化器；若不能走，问题集中在G1基础任务/奖励/动力学映射。该实验仍需独立G1 AMP验收，不能把冷启动结果当AMP成功。
+
+
+真实TD=0/.5短程对照已完整结束：同一R3 model_3000续训500步到3500，control固定整体RMSE(.6422,.2238,.3938)、53摔，anchor(.6335,.2406,.3831)、58摔；两臂七指令步态步频均0，style forward/fast分别control 1.2943/1.3792、anchor 1.2683/1.4213。anchor没有真实迈步收益，停止把真实TD锚定作为当前修复方向；证据logs/amp_g1/real_value_ablation.pipeline.json及对应velocity/gait JSON，均为诊断续训，不是G1成功。
+
+已按Go2从零收敛流程新增G1冷启动基础任务：`G1-Velocity-Flat`共享G1平地资产、PD、奖励和SuperMimic接口但关闭AMP；修复G1 reward对`joint_deviation_gait_fraction`的忽略，使初期可使用平方关节惩罚并在最终阶段回到现有L1 walk惩罚。新增CPU测试`tests/test_g1_reward.py`与既有课程测试共5项通过，三处源码py_compile及git diff --check通过。

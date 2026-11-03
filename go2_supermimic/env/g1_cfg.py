@@ -71,3 +71,16 @@ class G1AmpEnvCfg(Go2VelocityEnvCfg):
   amp_enabled = True
   amp_motion_files = DEFAULT_G1_MOTIONS
   task = walk_task()
+
+
+@configclass
+class G1VelocityEnvCfg(G1AmpEnvCfg):
+  """G1 flat velocity task used to build a cold-start locomotion policy.
+
+  The task, robot, plane and reward definition are shared with G1 AMP. Only
+  the motion library and discriminator are disabled so this checkpoint can be
+  used as the same-robot warm start for the subsequent AMP stage.
+  """
+
+  amp_enabled = False
+  amp_motion_files = ""

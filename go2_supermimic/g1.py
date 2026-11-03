@@ -104,6 +104,16 @@ def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
   q, qd = s1[:, Q] + c.default_q, s1[:, QD]
   torque = motor_torque(s1, action, c, cfg)
   moving = commands.norm(dim=-1) > .1
+  # Match the Go2 cold-start curriculum while preserving the final G1 walk
+  # reward: early training uses a smooth squared joint penalty, then blends to
+  # the reference walk L1 deviation. The compiled imagination path passes the
+  # scheduled fraction through ``parameters[-1]``.
+  gait_deviation = s1[:, Q].abs().sum(-1) * torch.where(
+    moving, 1., cfg.stand_still_scale)
+  fraction = (cfg.joint_deviation_gait_fraction if parameters is None
+              else parameters[-1])
+  deviation = ((1 - fraction) * s1[:, Q].square().sum(-1)
+               + fraction * gait_deviation)
   terms = {
     "track_linear_velocity": torch.exp(
       -(s1[:, V_B][:, :2] - commands[:, :2]).square().sum(-1) / cfg.tracking_variance),
@@ -112,7 +122,7 @@ def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
     "roll_pitch_rate": s1[:, W_B][:, :2].square().sum(-1),
     "orientation": s1[:, GRAV][:, :2].square().sum(-1),
     "base_height": (s1[:, 0] - cfg.nominal_height).square(),
-    "joint_deviation": s1[:, Q].abs().sum(-1) * torch.where(moving, 1., cfg.stand_still_scale),
+    "joint_deviation": deviation,
     "action_rate": (action - previous_action).square().sum(-1),
     "joint_torque": torque.square().sum(-1), "joint_velocity": qd.square().sum(-1),
     "energy": (torque * qd).abs().sum(-1),

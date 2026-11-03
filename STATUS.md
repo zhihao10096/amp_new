@@ -1,5 +1,11 @@
 # 当前状态与恢复入口
 
+## A1/G1差异诊断复核（2026-11-04，本轮）
+- 核实HEAD为`a979f5e7939f174fa1d3a8fb607340d652c6810f`，原真实TD对照driver2689332仍在运行；不重复启动或改变两臂配置。
+- 新确认的首要比较混杂：A1正式model_0已加载已收敛Manager actor/WM，七指令步态评估全部零摔倒；1/1.5m/s实际vx=.94146/1.43389m/s、每足步频3.418/3.489Hz。它在AMP迭代0已经能走，但站立步频/快走足滑等尚未满足A1验收。G1 R3 model_0为随机初始化，七组20秒×8环境共806次摔倒、每足步频均0。因此A1的1000轮通过不能解释为从零快速学会行走；证据`logs/amp_a1/formal_r1_baseline_gait.json`、`convergence_report.json`及`logs/amp_g1/formal_r3_baseline_gait.json`。
+- CPU离线追查已完成：A1初始actor/WM与Manager逐张量一致；Go2最终模型确证random_initialization/seed0，3000–5000奖励课程。G1冷启动无该课程且关节项始终L1；.01rad每关节局部代价/梯度较Go2初期平方项为60/30倍（非总梯度结论）。R3正常/冻结零速专家特征style=.89035/.87366；静止脚离地项满分且足高梯度0。证据`logs/amp_g1/a1_g1_gap_audit.{py,json,log}`与[综合诊断](docs/experiments/A1_GO2_G1_CONVERGENCE_GAP_2026-11-04.md)。未修改生产代码/训练配置，未证明单一根因或修复。
+- 本轮最新进程核实：driver2689332，anchor训练已保存3500并结束，现阶段`real_value_ablation_velocity_anchor`、child2698057；目录`logs/supermimic/2026-11-04_06-31-11_000288_g1_real_value_ablation_anchor`，最新诊断`model_3500.pt`。control3500速度失败19项、步态失败14项、0.6/1m/s步频仍0；anchor完整评估待pipeline。正式最新/最佳结论仍为下文，无通过验收G1。下一命令仍读原pipeline并核对active_pid，不重启。
+
 ## 目标、版本和目录
 - 开发机权威目录`/pfs/user/learning/amp_new`，SSH `ssh -p 9205 root@118.196.87.69`。恢复先读GOAL/PLAN/STATUS/PROGRESS，再核实HEAD、实际进程和产物，避免重复启动。
 - 当前实现/文档版本以`git rev-parse HEAD`核实；当前实验实现commit`fa93cabff98ec9870c971cf155009a29506c022e`；后续仅文档提交以HEAD为准。新增可选真实TD critic目标，源码SHA256及全部验证见real_value_validation.audit.json；正式R3来源仍`9bc7115a082eafc403d5f8fb2947d10e3cac38b2`。原未跟踪reference/、exploration.py、explore_eval.py、dynamics_eval.py、test_exploration.py及R3历史文件保留，勿误提交。
@@ -40,3 +46,42 @@
 
 - A1/G1具体实现差异已核对：A1的43维AMP特征含机身线速度、足端位置和高度，G1的61维仅角速度/关节角/关节速度；G1参考配置四帧而当前两帧。结合静态参考姿态高D分数，列为风格信号偏姿态的待验假设，不能据此宣称根因或修复成功；原0/.5价值对照保持不变。
 - 本轮恢复核实：driver PID2689332，阶段`real_value_ablation_velocity_control`，child PID2692200；当前诊断运行目录`logs/supermimic/2026-11-04_06-23-45_439174_g1_real_value_ablation_control`，最新诊断checkpoint`logs/supermimic/2026-11-04_06-23-45_439174_g1_real_value_ablation_control/model_3500.pt`。正式来源与最佳模型结论不变；动态更新以pipeline及实际ps为准。
+
+- 真实TD短程对照结束real_value_ablation_velocity_control，返回码0，日志logs/amp_g1/real_value_ablation_velocity_control.log。
+
+- 真实TD短程对照启动real_value_ablation_gait_control，driver PID2689332、child PID2694072；配置/命令/峰值/log见logs/amp_g1/real_value_ablation.pipeline.json，勿重复启动。
+
+- A1/G1来源差异核实：logs/amp_a1/convergence_report.json的training_origin.kind=warm_start，actor/WM来源checkpoints/go2_manager_converged.pt（SHA256 07fc3f6e0e6801a3e60ab591be25dbeb3071c930809f847dd14284477dbfa9dd）；G1 R1–R3是随机初始化。A1成功不能单独证明当前G1冷启动能形成步态。待当前0/.5对照结束，若无真实迈步收益，优先诊断从零步态启动/动态数据覆盖，再决定分阶段基础行走预训练；维持WM/AMP、禁PPO、正式随机来源及原验收。
+
+- 真实TD短程对照结束real_value_ablation_gait_control，返回码0，日志logs/amp_g1/real_value_ablation_gait_control.log。
+
+- 真实TD短程对照control完整速度/步态评估结束，速度失败19项、步态失败14项；只证明本次诊断结果，不是正式三点验收。
+
+- 真实TD短程对照启动real_value_ablation_train_anchor，driver PID2689332、child PID2694577；配置/命令/峰值/log见logs/amp_g1/real_value_ablation.pipeline.json，勿重复启动。
+
+- 真实TD短程对照anchor初始审计通过：四网/四优化器逐项匹配同一R3模型；任务/数据split不变，仅实验开关不同，属诊断续训，不是正式G1成功来源。
+
+- 进一步核实A1初始model_0已具备迈步：formal_r1_baseline_gait.json在1/1.5m/s指令下实际vx=.94146/1.43389、步频3.4181/3.4889Hz、零摔倒；G1随机model_0约115–116摔且步频0。来源差异比单凭机器人类别更直接。
+- 修正旧诊断表述：reference_behavior_diagnostic_r2的hold是固定参考关节目标，不是完全静止状态；其平均vx=.501、2秒128/128摔倒而style=.99978。它证明高风格分数不保证稳定步行，不能单独证明D只看静态姿态。
+
+- 真实TD短程对照结束real_value_ablation_train_anchor，返回码0，日志logs/amp_g1/real_value_ablation_train_anchor.log。
+
+- 真实TD短程对照启动real_value_ablation_velocity_anchor，driver PID2689332、child PID2698057；配置/命令/峰值/log见logs/amp_g1/real_value_ablation.pipeline.json，勿重复启动。
+
+- 真实TD短程对照结束real_value_ablation_velocity_anchor，返回码0，日志logs/amp_g1/real_value_ablation_velocity_anchor.log。
+
+- 真实TD短程对照启动real_value_ablation_gait_anchor，driver PID2689332、child PID2700038；配置/命令/峰值/log见logs/amp_g1/real_value_ablation.pipeline.json，勿重复启动。
+
+- 真实TD短程对照结束real_value_ablation_gait_anchor，返回码0，日志logs/amp_g1/real_value_ablation_gait_anchor.log。
+
+- 真实TD短程对照anchor完整速度/步态评估结束，速度失败20项、步态失败15项；只证明本次诊断结果，不是正式三点验收。
+
+- 真实TD短程0/.5对照全部结束；按real_value_ablation.pipeline.json及velocity/gait报告判断是否有实际迈步收益，无收益则停止此轮，不盲目续训；G1未独立成功前不进入X1。
+
+- 关键决定（2026-11-04）：用户指出Go2可从零收敛，G1应复用其训练过程。已新增`G1-Velocity-Flat`同机器人平地冷启动任务（共享G1奖励/动力学，关闭AMP），计划先从随机初始化验证基础行走，再用同机器人actor/世界模型warm-start G1 AMP；critic/判别器/优化器重新创建。当前真实TD对照仍按pipeline跟进，完成前不重启或叠加正式训练。
+- 当前代码增加冷启动任务但尚未提交/训练；校验通过py_compile与git diff --check。待现有real_value_ablation pipeline终止后，先提交此实现，再做32env smoke，随后按GPU容量启动G1-Velocity-Flat冷启动。
+
+- 真实TD=0/.5短程对照已完整结束：同一R3 model_3000续训500步到3500，control固定整体RMSE(.6422,.2238,.3938)、53摔，anchor(.6335,.2406,.3831)、58摔；两臂七指令步态步频均0，style forward/fast分别control 1.2943/1.3792、anchor 1.2683/1.4213。anchor没有真实迈步收益，停止把真实TD锚定作为当前修复方向；证据logs/amp_g1/real_value_ablation.pipeline.json及对应velocity/gait JSON，均为诊断续训，不是G1成功。
+- 已按Go2从零收敛流程新增G1冷启动基础任务：`G1-Velocity-Flat`共享G1平地资产、PD、奖励和SuperMimic接口但关闭AMP；修复G1 reward对`joint_deviation_gait_fraction`的忽略，使初期可使用平方关节惩罚并在最终阶段回到现有L1 walk惩罚。新增CPU测试`tests/test_g1_reward.py`与既有课程测试共5项通过，三处源码py_compile及git diff --check通过。
+- 当前正式/诊断进程已退出；真实TD pipeline stage=complete，最新诊断checkpoint为logs/supermimic/2026-11-04_06-31-11_000288_g1_real_value_ablation_anchor/model_3500.pt。
+- 下一步：提交冷启动任务与记录后，先运行G1-Velocity-Flat 32env短跑/保存恢复，确认无接口错误；再按Go2课程从G1随机初始化训练基础行走，独立评估有真实步态后warm-start G1 AMP。

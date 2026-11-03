@@ -1,6 +1,7 @@
 # 目标、范围与完成条件
 
 - 总目标：已完成Manager based收敛与A1 AMP平地行走；当前参考`reference/legged_lab`实现G1 AMP平地walk，成功后参考`reference/AMP`实现X1 AMP行走（策略仅下半身12DOF）；禁止使用PPO，沿用/扩展SuperMimic模型学习路线。
+- G1训练流程要求：参考Go2从随机初始化先建立基础速度/步态的过程；必要时先运行同机器人`G1-Velocity-Flat`冷启动，再以同机器人actor/世界模型warm-start G1 AMP。该阶段仍使用平地和SuperMimic，不使用PPO，不能替代G1 AMP独立验收。
 - Manager阶段已完成：随机来源7000/8000/9000连续通过完整速度/步态，最终加噪、录像和实际checkpoint来源/更新审计通过；证据MANAGER_CONVERGENCE.md。A1 AMP已独立通过1000/2000/3000三检查点、最终加噪/录像及审计，证据AMP_CONVERGENCE.md；下一阶段G1平地walk；两者均禁止PPO，不能以Manager完成代替总目标完成。
 - 用户已上传logs/videos并明确继续，撤销此前暂停约束；可以修复代码/依赖、运行实验和直接git commit。保留reference原状。
 - 维持MANAGER_CONVERGENCE.md预先记录的全部标准：三个相隔1000迭代的检查点同时通过20固定+3随机种子的速度及7指令步态评估，最终加噪复测及录像；正式训练来源必须为Manager随机初始化。

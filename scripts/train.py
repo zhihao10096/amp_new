@@ -1,4 +1,4 @@
-"""Train Go2 Manager velocity tracking or A1 AMP with Isaac Lab/SuperMimic."""
+"""Train Go2/G1 velocity tracking or A1/G1 AMP with Isaac Lab/SuperMimic."""
 
 import argparse
 import sys
@@ -43,8 +43,10 @@ def main():
     from go2_supermimic.g1 import DEFAULT_G1_MOTIONS
     values["amp_motion_files"] = DEFAULT_G1_MOTIONS
   cfg = TrainCfg(**values)
-  if cfg.task not in ("Go2-Velocity-Flat", "A1-AMP-Flat", "G1-AMP-Flat"):
-    parser.error("available tasks: Go2-Velocity-Flat, A1-AMP-Flat, G1-AMP-Flat")
+  if cfg.task not in ("Go2-Velocity-Flat", "A1-AMP-Flat", "G1-AMP-Flat",
+                      "G1-Velocity-Flat"):
+    parser.error("available tasks: Go2-Velocity-Flat, A1-AMP-Flat, "
+                 "G1-AMP-Flat, G1-Velocity-Flat")
   launcher = AppLauncher(args)
   env = None
   try:
@@ -57,9 +59,9 @@ def main():
 
     torch.set_float32_matmul_precision(cfg.matmul_precision)
     env_cfg = A1AmpEnvCfg() if cfg.task == "A1-AMP-Flat" else Go2VelocityEnvCfg()
-    if cfg.task == "G1-AMP-Flat":
-      from go2_supermimic.env.g1_cfg import G1AmpEnvCfg
-      env_cfg = G1AmpEnvCfg()
+    if cfg.task in ("G1-AMP-Flat", "G1-Velocity-Flat"):
+      from go2_supermimic.env.g1_cfg import G1AmpEnvCfg, G1VelocityEnvCfg
+      env_cfg = G1AmpEnvCfg() if cfg.task == "G1-AMP-Flat" else G1VelocityEnvCfg()
     env_cfg.scene.num_envs = cfg.num_envs
     env_cfg.sim.device = args.device
     env_cfg.seed = cfg.seed
