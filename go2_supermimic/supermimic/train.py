@@ -15,6 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from go2_supermimic import velocity as v
 from go2_supermimic.supermimic.buffer import ReplayBuffer
+from go2_supermimic.supermimic.curriculum import curriculum_fraction, training_task
 from go2_supermimic.supermimic.imagine import CRITIC_DIM, ImagineCfg, Imagination
 from go2_supermimic.supermimic.world_model import RunningNorm, WorldModel, mlp
 
@@ -61,6 +62,9 @@ class TrainCfg:
   robot_usd: str = ""
   stop_file: str = ""
   """If this file exists, save at the next iteration boundary and exit."""
+  reward_curriculum_start: int = 0
+  reward_curriculum_end: int = 0
+  """Zero disables the curriculum; otherwise reach final rewards at this iteration."""
 
   def __post_init__(self):
     for name in ("num_envs", "iterations", "collect_steps", "buffer_len", "wm_window", "wm_batch",
@@ -78,6 +82,8 @@ class TrainCfg:
       raise ValueError("continue_run requires resume")
     if self.warm_start and self.resume:
       raise ValueError("warm_start and resume are mutually exclusive")
+    if not 0 <= self.reward_curriculum_start <= self.reward_curriculum_end:
+      raise ValueError("reward curriculum requires 0 <= start <= end")
 
 
 class Actor(nn.Module):
@@ -161,7 +167,21 @@ class Trainer:
     self.writer = SummaryWriter(str(self.log_dir))
     self.metrics = {}
     self.metric_steps = 0
+    self.set_training_rewards(self.start_it)
     print(f"Log directory: {self.log_dir}", flush=True)
+
+  def set_training_rewards(self, iteration):
+    cfg = self.cfg
+    self.reward_fraction = curriculum_fraction(
+      iteration, cfg.reward_curriculum_start, cfg.reward_curriculum_end)
+    task = training_task(self.env.cfg.task, self.reward_fraction)
+    self.imag.task = task
+    for name in self.env.cfg.task.rewards.__dataclass_fields__:
+      term = self.env.reward_manager.get_term_cfg(name)
+      weight = getattr(task.rewards, name)
+      if term.weight != weight:
+        term.weight = weight
+        self.env.reward_manager.set_term_cfg(name, term)
 
   def load(self, path):
     ckpt = load_checkpoint(path, self.device)
@@ -306,6 +326,7 @@ class Trainer:
     torch.save({"format": CHECKPOINT_FORMAT, "iteration": iteration,
                 "environment_backend": self.env.environment_backend,
                 "training_origin": self.training_origin,
+                "reward_curriculum_fraction": self.reward_fraction,
                 "cfg": asdict(self.cfg), "task_cfg": asdict(self.env.cfg.task), "dt": self.env.step_dt,
                 "env_steps": self.env_steps, "sim_steps": self.env.common_step_counter,
                 "obs_dim": self.obs.shape[-1], "actor": self.actor.state_dict(),
@@ -328,6 +349,7 @@ class Trainer:
       while self.buf.size < cfg.wm_window:
         self.collect()
       for iteration in range(self.start_it + 1, cfg.iterations + 1):
+        self.set_training_rewards(iteration)
         fraction = min(iteration / cfg.lr_decay_iterations, 1)
         lr = cfg.lr * (cfg.lr_final_frac + (1 - cfg.lr_final_frac) * 0.5 * (1 + math.cos(math.pi * fraction)))
         actor_start = cfg.warmup_iterations + cfg.critic_warmup_iterations
@@ -336,7 +358,8 @@ class Trainer:
           for group in opt.param_groups:
             group["lr"] = lr * scale
         self.collect()
-        stats = {"wm_loss": self.fit_world_model()}
+        stats = {"wm_loss": self.fit_world_model(),
+                 "reward_curriculum_fraction": self.reward_fraction}
         if iteration > cfg.warmup_iterations:
           stats.update(self.improve_policy(update_actor=iteration > actor_start))
         if iteration % cfg.log_interval == 0 or iteration == cfg.iterations:

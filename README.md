@@ -1,7 +1,7 @@
 # Go2 SuperMimic：Isaac Lab 速度跟踪
 
 当前目标、计划和开发机实际状态见 [GOAL.md](GOAL.md)、[PLAN.md](PLAN.md)、[STATUS.md](STATUS.md)。
-本文中的旧训练产物是历史记录；当前开发机未迁入模型、日志和视频。
+旧训练产物位于已上传的logs/videos；新Manager环境的收敛结论须以当前独立验收为准。
 
 使用 **Isaac Lab / Isaac Sim / PhysX** 实现 Unitree Go2 平地速度跟踪。任务为
 `Go2-Velocity-Flat`，输入机体系前进速度 `vx`、侧向速度 `vy`（m/s）与转向角速度
@@ -65,6 +65,17 @@ python scripts/train.py --headless --resume logs/supermimic/<run>/model_1000.pt 
 
 tensorboard --logdir logs/supermimic
 ```
+
+从随机初始化学习完整步态奖励时，可先使用弱运动惩罚，再逐步恢复最终权重：
+
+```bash
+python scripts/train.py --headless --reward-curriculum-start 3000 \
+  --reward-curriculum-end 5000 --run-name manager_curriculum
+```
+
+调度在真实RewardManager与想象中使用相同权重；checkpoint保留最终任务配置并记录实际
+调度比例，恢复按总迭代数继续。评估始终使用最终任务，完整验收拒绝尚未到最终权重的
+checkpoint。默认不启用调度；这项策略仍在训练验证，不能视为收敛证据。
 
 `TrainCfg` 的字段均可用同名短横线参数设置，完整列表见 `--help`。默认 1024 个环境、
 每迭代采样 4 步，前 300 次迭代只拟合世界模型，随后逐步提升 actor 学习率。

@@ -40,6 +40,8 @@ def main():
         or checkpoint["iteration"] != report["iteration"]
         or checkpoint["task_cfg"] != initial["task_cfg"]):
       failures.append(f"{path.name}/checkpoint_provenance")
+    if checkpoint.get("reward_curriculum_fraction", 1.0) != 1.0:
+      failures.append(f"{path.name}/incomplete_reward_curriculum")
     for name in ("actor", "critic", "world_model"):
       tensors = checkpoint[name]
       if not all(torch.isfinite(t).all() for t in tensors.values()):

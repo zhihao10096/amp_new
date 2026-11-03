@@ -5,6 +5,7 @@ python tests/check_isaaclab.py --headless
 
 import argparse
 import traceback
+from types import SimpleNamespace
 
 from isaaclab.app import AppLauncher
 
@@ -22,6 +23,7 @@ try:
   from go2_supermimic import velocity as v
   from go2_supermimic.env.env_cfg import Go2VelocityEnvCfg
   from go2_supermimic.supermimic.state import robot_state
+  from go2_supermimic.supermimic.train import TrainCfg, Trainer
 
   cfg = Go2VelocityEnvCfg()
   cfg.scene.num_envs = 16
@@ -113,8 +115,22 @@ try:
                              command, env.consts, cfg.task, env.step_dt, term, gait)
   expected -= cfg.task.rewards.track_linear_velocity * terms["track_linear_velocity"] * env.step_dt
   torch.testing.assert_close(actual, expected)
+  trainer = Trainer.__new__(Trainer)
+  trainer.env = env
+  trainer.imag = SimpleNamespace(task=cfg.task)
+  trainer.cfg = TrainCfg(reward_curriculum_start=0, reward_curriculum_end=100)
+  for iteration in (0, 50, 100):
+    trainer.set_training_rewards(iteration)
+    before, previous = robot_state(env).clone(), env.actions.clone()
+    command, gait = env.commands.clone(), env.gait.clone()
+    _, actual, term, _, extras = env.step(action)
+    expected, _ = v.reward(before, extras["transition"]["next_state"], action, previous,
+                            command, env.consts, trainer.imag.task, env.step_dt, term, gait)
+    torch.testing.assert_close(actual, expected)
+    assert cfg.task.rewards.gait_duration == -8
   print(f"PASS: native manager step/reset, observation/reward parity, {resets} resets, {falls} falls, "
-        f"{resamples} command resamples, single/batched commands survive resets", flush=True)
+        f"{resamples} command resamples, single/batched commands survive resets, "
+        "curriculum reward parity at initial/midpoint/final weights", flush=True)
 except Exception:
   traceback.print_exc()
   raise
