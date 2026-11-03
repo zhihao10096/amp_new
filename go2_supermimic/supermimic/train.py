@@ -176,6 +176,8 @@ class Trainer:
       iteration, cfg.reward_curriculum_start, cfg.reward_curriculum_end)
     task = training_task(self.env.cfg.task, self.reward_fraction)
     self.imag.task = task
+    # Reward terms read the live task as well as their manager weights.
+    self.env.training_task = task
     for name in self.env.cfg.task.rewards.__dataclass_fields__:
       term = self.env.reward_manager.get_term_cfg(name)
       weight = getattr(task.rewards, name)

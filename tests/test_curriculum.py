@@ -1,13 +1,15 @@
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 from go2_supermimic.supermimic.curriculum import (
   curriculum_fraction, restore_curriculum_options, training_task,
 )
 from go2_supermimic.supermimic.train import TrainCfg, Trainer
+from go2_supermimic import velocity as v
 from go2_supermimic.velocity import VelocityTaskCfg
 
 
@@ -48,7 +50,34 @@ def test_simulator_managers_and_imagination_use_the_same_scheduled_weights():
     for name, value in asdict(trainer.imag.task.rewards).items():
       assert terms[name].weight == value
     assert target.rewards.gait_duration == -8
+    assert trainer.env.training_task is trainer.imag.task
   assert asdict(trainer.imag.task) == asdict(target)
+
+
+def test_initial_curriculum_matches_convergent_squared_reward_and_gradients():
+  """Initial rewards must reproduce the speed baseline, including small motions."""
+  task = training_task(VelocityTaskCfg(), 0)
+  consts = v.RobotConsts(
+    default_q=torch.zeros(12), soft_limits=torch.tensor([[-2., 2.]]).expand(12, 2),
+    kp=torch.ones(12) * 20, kd=torch.ones(12), effort=torch.ones(12) * 30,
+    velocity=torch.ones(12) * 30)
+  state = torch.zeros(3, v.STATE_DIM)
+  state[:, 0], state[:, 3] = .3, -1
+  state[:, v.Q] = .01
+  state.requires_grad_()
+  action = torch.zeros(3, 12)
+  commands = torch.tensor([[0., 0., 0.], [1., 0., 0.], [-1., .3, .5]])
+  reward_args = (state.detach(), state, action, action, commands, consts)
+  tail = (.02, torch.zeros(3), torch.zeros(3, v.GAIT_DIM))
+  actual, terms = v.reward(*reward_args, task, *tail)
+  legacy, _ = v.reward(*reward_args, replace(task, reward_profile="legacy"), *tail)
+  torch.testing.assert_close(actual, legacy)
+  torch.testing.assert_close(terms["joint_deviation"], torch.full((3,), .0012))
+  actual_grad = torch.autograd.grad(actual.sum(), state, retain_graph=True)[0]
+  legacy_grad = torch.autograd.grad(legacy.sum(), state)[0]
+  torch.testing.assert_close(actual_grad, legacy_grad)
+  assert task.rewards.undesired_contacts == 0
+  assert training_task(VelocityTaskCfg(), .5).joint_deviation_gait_fraction == .5
 
 
 def test_resume_inherits_schedule_and_respects_explicit_zero_or_partial_overrides():

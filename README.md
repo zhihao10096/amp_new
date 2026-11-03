@@ -12,7 +12,8 @@
 
 环境现使用 **ManagerBasedRLEnv**，由原生动作、观测、指令、奖励、终止和事件
 managers 执行任务。新实现正从随机初始化训练并验证收敛，进度及独立验收标准见
-[Manager based 验证记录](MANAGER_CONVERGENCE.md)。
+[Manager based 验证记录](MANAGER_CONVERGENCE.md)。可收敛历史版本的差异及修正依据见
+[基线对照](MANAGER_BASELINE.md)。
 
 以下为迁移前 Direct 环境的历史基线。速度收敛模型：
 `checkpoints/go2_velocity_converged.pt`。第 3000、4000、
@@ -73,7 +74,8 @@ python scripts/train.py --headless --reward-curriculum-start 3000 \
   --reward-curriculum-end 5000 --run-name manager_curriculum
 ```
 
-调度在真实RewardManager与想象中使用相同权重；checkpoint保留最终任务配置并记录实际
+初期关节偏移使用已收敛速度阶段的平方惩罚，再平滑过渡至最终步态范数；
+调度在真实RewardManager与想象中使用相同公式和权重；checkpoint保留最终任务配置并记录实际
 调度比例；恢复默认继承checkpoint中的调度参数，显式传参可覆盖，并按总迭代数继续。评估始终使用最终任务，完整验收拒绝尚未到最终权重的
 checkpoint。默认不启用调度；这项策略仍在训练验证，不能视为收敛证据。
 

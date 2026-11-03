@@ -89,7 +89,7 @@ def capture_transition(env):
     done = v.terminated(state, env.cfg.task)
     _, terms = v.reward(
       before, state, env.actions, env.previous_actions, commands,
-      env.consts, env.cfg.task, env.step_dt, done, env.gait)
+      env.consts, getattr(env, "training_task", env.cfg.task), env.step_dt, done, env.gait)
     env._reward_components = terms
     env.gait, _ = v.advance_gait(
       env.gait, before[:, v.CONTACT], state[:, v.CONTACT], env.step_dt)

@@ -18,6 +18,7 @@ INITIAL_WEIGHTS = {
   "feet_air_time": 0.0,
   "air_time_variance": 0.0,
   "feet_slide": 0.0,
+  "undesired_contacts": 0.0,
   "feet_clearance": 0.0,
   "feet_contact_without_command": 0.0,
   "gait_duration": 0.0,
@@ -49,4 +50,6 @@ def training_task(target: VelocityTaskCfg, fraction: float) -> VelocityTaskCfg:
     name: initial + fraction * (getattr(target.rewards, name) - initial)
     for name, initial in INITIAL_WEIGHTS.items()
   }
-  return replace(target, rewards=replace(target.rewards, **weights))
+  return replace(
+    target, rewards=replace(target.rewards, **weights),
+    joint_deviation_gait_fraction=fraction * target.joint_deviation_gait_fraction)

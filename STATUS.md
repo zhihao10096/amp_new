@@ -1,37 +1,43 @@
 # 当前状态与恢复入口
 
-## 目标与版本
-- 总目标：先Manager完整收敛，再参考reference/rl_amp实现Go2 AMP行走；禁止PPO，保留SuperMimic世界模型/想象更新。
-- 开发机目录/pfs/user/learning/amp_new，当前代码commit917072e（奖励调度+PhysX patch扩容）；用户reference/未跟踪且保持原状。
+## 目标/版本
+- 总目标：先Manager完整收敛，再参考reference/rl_amp实现Go2 AMP行走；禁止PPO。当前专注Manager静止策略。
+- 开发机目录/pfs/user/learning/amp_new；HEAD8029aaa。训练代码已提交奖励调度、PhysX扩容及调度恢复；当前未提交诊断脚本dynamics_eval.py/explore_eval.py、纯Torch探索生成器exploration.py及测试test_exploration.py。
+- reference/为用户未跟踪目录，保持原状。CPU28项通过；当前Actor接口仍225维，无phase输入。
 
-## 当前实验（先核实进程，不重复启动）
-- PID=2351410；日志logs/manager_4090/curriculum_fixed.log，精确命令curriculum_fixed.command.json，GPU采样curriculum_fixed.gpu.csv；运行目录logs/supermimic/2026-11-03_22-28-23_077303_manager4090_curriculum_fixed。
-- 24576env/collect1/buffer128/WM4096×4/imag4096/horizon32；从原Manager model1000继续至2500，每500保存；WM预热阈值1000+critic200；奖励3000开始增加、5000达到最终权重。
-- 初始模型：logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/model_1000.pt；actor网络已逐张量证明与model0相同，随机来源保留。禁止使用作废实验权重。
-- 当前任务是弱正则运动学习诊断，尚未完成最终奖励，更未证明收敛。最新有效checkpoint尚未更新，预计下一model1500；最佳Manager尚无。
-- 监测进程自动记录GPU并在PhysX/CUDA错误时作废停止，告警文件curriculum_fixed.invalid.json。下次先读该文件（若有）、日志及进程状态。
-- 下一条命令：`ssh -p 9205 root@118.196.87.69 'cd /pfs/user/learning/amp_new && ps -p 2351410 -o pid,stat,etime,args && tail -n 3 logs/manager_4090/curriculum_fixed.log && nvidia-smi'`。
+## 当前实验
+- PID2378486，32env实际更新保存烟测，配置reward-curriculum4/12；日志logs/manager_4090/baseline_reward_smoke.log，命令见baseline_reward_smoke.process.json。
+- GPU接口回归PASS：80reset/1强制翻倒/144指令切换，真实/想象奖励初中末一致。CPU29项通过。
+- 旧周期探索扫描已结束，112组结果存trot_phase_scan.json，未用于训练。当前优先修正初期奖励与可收敛基线的数学差异。
+- 下一条命令：`tail -n 5 logs/manager_4090/baseline_reward_smoke.log`；完成后验证恢复/评估，提交修复，再从Manager随机初始化启动受控训练。
 
-## 已验证
-- CPU25项PASS；16环境及24576环境GPU接口/奖励调度一致性PASS；大规模回归122880reset/1强制翻倒/221184指令切换，完整日志零PhysX错误（logs/manager_4090/large_scene_integration.log）。
-- 32环境12轮、恢复16轮及2秒评估PASS，actor/critic/WM均更新且有限（curriculum_smoke_report.json）；默认关闭调度，最终任务配置不变，验收拒绝未达最终权重的模型。
-- RTX4090D 24564MiB，Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5；pytest/mediapy/editable安装完成。OMNI_KIT_ACCEPT_EULA=YES、OMNI_KIT_ALLOW_ROOT=1，清除PYTHONPATH。无rg。
+## 最新/最佳checkpoint与最近结果
+- 最新有效：logs/supermimic/2026-11-03_22-28-23_077303_manager4090_curriculum_fixed/model_2500.pt；运行代码917072e，24576env/collect1/buffer128/WM4096×4/imag4096/horizon32，初期弱正则未开始增加最终约束（start3000/end5000）。
+- 从原Manager model1000（actor与model0相同、随机来源）继续至2500结束，用时648秒，actor更新阶段约2.2迭代/s、真实采样5.5万/s，显存约16.1GB；全日志零PhysX/CUDA错误。日志curriculum_fixed.log/.gpu.csv。
+- 7指令×4env×8秒诊断：model1500/2000前进几乎0；model2500前进1m/s实际vx约.00075，转弯yaw约.104/目标.5（curriculum_gait2500.json）。最佳Manager尚无，尚未证明收敛。
+- 原始Manager初始/恢复证据：logs/supermimic/2026-11-03_20-51-11_991689_manager_from_scratch/model_0.pt、model_1000.pt；原model2000/2025同目录仍在。
+- 旧Direct最佳步态：logs/supermimic/2026-11-03_20-07-39_561455_gait_slip_refinement/model_1500.pt；logs/videos均已上传，旧结果只作历史基线。
 
-## 产物与关键结论
-- logs/videos已上传。原Manager目录有model0/1000/2000/2025；旧Direct最佳步态位于logs/supermimic/2026-11-03_20-07-39_561455_gait_slip_refinement/model_1500.pt，仅作历史基线。
-- 有效8192env续训200更新后线速度误差仍约.69，真实吞吐约5.8万/s；原16k/24k吞吐实验发现初始化patch溢出，全部作废，不能引用其吞吐/模型作为有效证据（physics_log_audit.json）。
-- 上轮curriculum_train.log也触发patch溢出，已核实身份强制停止；不用其数据/权重。当前新实验已把默认163840 patch扩至786432（32/env），通过大规模落地/reset复验。
-- 原model2000独立诊断1m/s平均vx约.0006、无腾空，未收敛；世界模型想象回报提升而真实速度不变。
+## 已完成验证与已排除
+- CPU28项；16env和24576env GPU接口/奖励调度一致，32env实际WM/actor/critic更新、保存/恢复/评估、默认继承调度CLI均PASS。报告均在logs/manager_4090/。
+- 已修复PhysX patch默认163840不足，现至少32×envs（24576为786432）；大规模回归122880reset/221184指令切换零物理错误。原16k/24k吞吐测试和首次curriculum_train.log因初始化溢出作废，不复用模型/吞吐结论。
+- 弱正则训练至2500仍未解决前进，排除“仅调低步态惩罚已成功”判断；不盲目增加最终权重或宣称收敛。
+- dynamics2000.json：低速轨迹线速度RMSE单步.0032、32步.0132m/s；这不足以检验运动区间模型，接触归一化误差约1。下一关注运动覆盖、闭环预测及探索。
+- 初始周期探索扫描（trot_exploration_scan.json）可产生-.3～-.65m/s后退，但零可用前进组；尚未用于训练。实际足端Jacobian（kinematics.json）确认thigh对x为负、calf对z为负，几何符号基本符合，下一检验执行器/接触导致的抬腿相位偏差。
+- 独立SuperMimic实现通常由参考重置获得运动状态；仅作为数据覆盖启发，不移植PPO。检索结果supermimic_research.json。
 
-## 未解决/下一步
-- 假设：从零全量最终步态正则抑制运动，叠加模型偏差；新调度须由真实评估验证。物理容量问题与原8192静止问题分别处理，不能混为一个根因。
-- 下一阶段：读取model1500/2000真实固定指令及步态指标，确认弱正则能否启动运动，再调整调度/模型；同时记录修复后的吞吐/显存，保留有用的大并行配置。
-- Manager通过三个1000间隔检查点的完整速度/步态、最终加噪和录像审计后，才实施AMP；reference已有A1的61维运动数据、43维AMP特征和LSGAN判别器，需要Go2关节/足端坐标适配，不移植其PPO。
+## 环境/后续
+- RTX4090D 24564MiB，Python3.10.12/Torch2.5.1+cu124/Lab2.1/Sim4.5，项目editable/pytest/mediapy已安装；仿真设OMNI_KIT_ACCEPT_EULA=YES/OMNI_KIT_ALLOW_ROOT=1并清除PYTHONPATH。无rg。
+- 当前剩余：验证运动探索，改善世界模型训练分布，再测随机actor的真实速度学习；完成最终步态奖励及三个1000间隔完整验收/加噪/录像后，再实现AMP。
+- AMP预研：reference/rl_amp有A1的61维motion、43维AMP特征和LSGAN判别器；后续需要Go2关节排序、足端几何适配并接入SuperMimic可微奖励，禁止PPO。
 
-详细标准MANAGER_CONVERGENCE.md；历史记录docs/history/PROGRESS_2026-11-03.md；当前阶段计划PLAN.md。
+验收标准MANAGER_CONVERGENCE.md；阶段计划PLAN.md；关键事件同步PROGRESS.md。
 
-- 本轮实际运行目录：logs/supermimic/2026-11-03_22-28-23_077303_manager4090_curriculum_fixed；最新日志检查无PhysX/CUDA/Traceback错误。
+## 用户提供可收敛基线（最新优先级）
+- 用户明确d9eee9b3f248e5300e636c433255db2c1c3e086a可收敛；立即转为对照该版本与Manager/后续改动的因果差异，优先复用已验证方法。
+- 当前无正式训练；周期探索及其Trainer接入尚未用于正式训练。训练接入修改只在本地/tmp/amp_new_edit，远端仍为已提交核心训练器；远端新增诊断/探索生成器未提交。
+- 下一条命令：git show d9eee9b3:README.md，检查该提交源码树及训练/状态/奖励实现。保留当前checkpoint，不回滚用户文件。
 
-- 发现并修复新调度的恢复边界：resume若未显式给参数，现继承checkpoint调度；显式0/部分覆盖仍有效。CPU26项PASS，旁路32env CLI回归PID=2354765，日志schedule_restore.log；主训练PID2351410继续。
+- 烟测完成，model20=logs/supermimic/2026-11-03_23-10-31_076350_baseline_reward_smoke/model_20.pt，真实WM/actor/critic更新及保存成功；恢复CLI验证PID2379347（20→24，省略调度参数），日志logs/manager_4090/baseline_reward_resume.log。
 
-- 最新有效checkpoint：logs/supermimic/2026-11-03_22-28-23_077303_manager4090_curriculum_fixed/model_1500.pt（初期调度比例0，未达最终验收），已启动7指令×4env×8秒诊断PID=2356116，日志curriculum_gait1500.log/报告curriculum_gait1500.json，主训练继续。
+- 恢复验证PASS：model24三网络/优化器均更新且有限，CLI继承4/12调度和最终公式；开始32env/2秒评估PID2380247，日志logs/manager_4090/baseline_reward_eval.log；证据baseline_reward_regression.json。

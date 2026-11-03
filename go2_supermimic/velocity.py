@@ -92,6 +92,8 @@ class VelocityTaskCfg:
   air_time_threshold: float = 0.5
   stand_still_scale: float = 5.0
   stand_velocity_threshold: float = 0.3
+  joint_deviation_gait_fraction: float = 1.0
+  """Blend the initial squared deviation into the final gait norm penalty."""
   swing_height: float = 0.06  # foot body centre, including 0.022 m foot radius
   clearance_variance: float = 0.01
   target_air_time: float = 0.18
@@ -206,7 +208,9 @@ def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
   else:
     moving = ((commands.norm(dim=-1) > 0)
               | (s1[:, V_B][:, :2].norm(dim=-1) > cfg.stand_velocity_threshold))
-    deviation = s1[:, Q].norm(dim=-1) * torch.where(moving, 1.0, cfg.stand_still_scale)
+    gait_deviation = s1[:, Q].norm(dim=-1) * torch.where(moving, 1.0, cfg.stand_still_scale)
+    fraction = cfg.joint_deviation_gait_fraction
+    deviation = (1 - fraction) * s1[:, Q].square().sum(-1) + fraction * gait_deviation
   terms = {
     "track_linear_velocity": torch.exp(
       -(s1[:, V_B][:, :2] - commands[:, :2]).square().sum(-1) / cfg.tracking_variance),
