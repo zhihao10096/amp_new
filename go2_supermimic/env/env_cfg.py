@@ -85,6 +85,7 @@ class TerminationsCfg:
 @configclass
 class Go2VelocityEnvCfg(ManagerBasedRLEnvCfg):
   robot_kind: str = "go2"
+  foot_names: tuple[str, ...] = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
   foot_radius: float = .022
   undesired_contact_patterns: tuple[str, ...] = ("Head_.*", ".*_hip", ".*_thigh", ".*_calf")
   amp_enabled: bool = False

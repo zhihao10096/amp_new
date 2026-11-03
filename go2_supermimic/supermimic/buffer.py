@@ -6,13 +6,14 @@ from go2_supermimic.velocity import GAIT_DIM, NUM_JOINTS, STATE_DIM
 
 
 class ReplayBuffer:
-  def __init__(self, num_envs, length, obs_dim, device):
+  def __init__(self, num_envs, length, obs_dim, device,
+               state_dim=STATE_DIM, act_dim=NUM_JOINTS, gait_dim=GAIT_DIM):
     self.n, self.length, self.device = num_envs, length, device
     z = lambda *shape: torch.zeros(num_envs, length, *shape, device=device)
-    self.s, self.next_s = z(STATE_DIM), z(STATE_DIM)
-    self.a, self.a_prev = z(NUM_JOINTS), z(NUM_JOINTS)
+    self.s, self.next_s = z(state_dim), z(state_dim)
+    self.a, self.a_prev = z(act_dim), z(act_dim)
     self.commands, self.command_time = z(3), z()
-    self.gait = z(GAIT_DIM)
+    self.gait = z(gait_dim)
     self.obs = torch.zeros(num_envs, length, obs_dim, device=device, dtype=torch.float16)
     self.done = torch.zeros(num_envs, length, device=device, dtype=torch.bool)
     self.ptr = self.size = 0

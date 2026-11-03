@@ -43,12 +43,12 @@ def mlp(in_dim, hidden, out_dim, act=nn.SiLU):
 
 
 class WorldModel(nn.Module):
-  def __init__(self, hidden=(512, 512, 512)):
+  def __init__(self, hidden=(512, 512, 512), state_dim=STATE_DIM, act_dim=NUM_JOINTS):
     super().__init__()
-    in_dim = STATE_DIM + 2 * NUM_JOINTS
-    self.net = mlp(in_dim, hidden, STATE_DIM)
+    in_dim = state_dim + 2 * act_dim
+    self.net = mlp(in_dim, hidden, state_dim)
     self.in_norm = RunningNorm(in_dim)
-    self.out_norm = RunningNorm(STATE_DIM)
+    self.out_norm = RunningNorm(state_dim)
 
   def update_stats(self, s, action, previous_action, next_state):
     self.in_norm.update(torch.cat([s, action, previous_action], -1))

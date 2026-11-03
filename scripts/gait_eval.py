@@ -32,14 +32,24 @@ def main():
     from go2_supermimic import velocity as v
     from go2_supermimic.amp import MotionLibrary, heldout_style_distance, state_features
     from go2_supermimic.amp_validation import A1_GAIT_CASES
+    from go2_supermimic.g1_validation import G1_GAIT_CASES
+    from go2_supermimic.task_api import amp_api
     from go2_supermimic.env.factory import attach_evaluation_amp, evaluation_config
     from go2_supermimic.supermimic.train import Actor, load_checkpoint
 
     first = load_checkpoint(args.checkpoints[0], args.device)
     suite = A1_GAIT_CASES if first.get("robot_kind") == "a1" else CASES
+    if first.get("robot_kind") == "g1":
+      suite = G1_GAIT_CASES
     task_name, cfg = evaluation_config(first, len(suite) * args.repeats, args.device)
     cfg.seed = args.seed
     env = gym.make(task_name, cfg=cfg).unwrapped
+    if env.robot_kind == "g1":
+      v = env.task_api
+      g1_amp = amp_api("g1")
+      MotionLibrary, heldout_style_distance, state_features = (
+        g1_amp.MotionLibrary, g1_amp.heldout_style_distance, g1_amp.state_features)
+    nfeet = len(env.foot_body_ids)
     commands = torch.tensor([c for _, c in suite], device=env.device).repeat_interleave(args.repeats, 0)
     env.set_command(commands)
     steps = round(args.seconds / env.step_dt)
@@ -56,7 +66,8 @@ def main():
         if expert.metadata != checkpoint["amp_motion_metadata"]:
           raise ValueError("motion data changed since the evaluated AMP checkpoint")
       style_pairs = {"forward": [], "fast": []}
-      actor = Actor(checkpoint["obs_dim"], tuple(checkpoint["cfg"]["actor_hidden"])).to(env.device)
+      actor = Actor(checkpoint["obs_dim"], tuple(checkpoint["cfg"]["actor_hidden"]),
+                    env.robot.num_joints).to(env.device)
       actor.load_state_dict(checkpoint["actor"])
       actor.eval()
       obs, _ = env.reset(seed=args.seed)
@@ -65,7 +76,8 @@ def main():
       sums = {name: z() for name in (
         "samples", "falls", "touchdowns", "air_sum", "stance_sum", "short_swings",
         "clearance_sum", "swing_samples", "slide_sum", "contact_samples", "joint_velocity_sq",
-        "torque_sq", "power", "action_delta_sq", "diagonal_sync", "front_alternation")}
+        "torque_sq", "power", "action_delta_sq", "diagonal_sync", "front_alternation",
+        "flight", "base_height")}
       sq = torch.zeros(n, 3, device=env.device)
       velocities = torch.zeros_like(sq)
       age = torch.zeros(n, device=env.device)
@@ -99,13 +111,13 @@ def main():
           sums["short_swings"] += ((last_air < .08) & touchdown).sum(-1)
           last_stance = sensor.data.last_contact_time[:, foot]
           sums["stance_sum"] += (last_stance * touchdown).sum(-1)
-          pos = s[:, v.FOOT_POS].reshape(n, 4, 3)
+          pos = s[:, v.FOOT_POS].reshape(n, nfeet, 3)
           height = s[:, v.Z] - (pos * s[:, v.GRAV][:, None, :]).sum(-1)
           clearance = (height - cfg.foot_radius).clamp(min=0)
           swing = ~contact & keep[:, None]
           sums["clearance_sum"] += (clearance * swing).sum(-1)
           sums["swing_samples"] += swing.sum(-1)
-          footvel = s[:, v.FOOT_VEL].reshape(n, 4, 3)
+          footvel = s[:, v.FOOT_VEL].reshape(n, nfeet, 3)
           g = s[:, v.GRAV][:, None, :]
           horizontal = footvel - (footvel * g).sum(-1, keepdim=True) * g
           stance = contact & keep[:, None]
@@ -116,9 +128,12 @@ def main():
           sums["power"] += (env.robot.data.applied_torque * s[:, v.QD]).abs().sum(-1) * keep
           sums["action_delta_sq"] += (env.actions - previous_action).square().mean(-1) * keep
           previous_action = env.actions.clone()
-          sums["diagonal_sync"] += (((contact[:, 0] == contact[:, 3]).float()
-                                     + (contact[:, 1] == contact[:, 2]).float()) / 2) * keep
+          if nfeet == 4:
+            sums["diagonal_sync"] += (((contact[:, 0] == contact[:, 3]).float()
+                                       + (contact[:, 1] == contact[:, 2]).float()) / 2) * keep
           sums["front_alternation"] += (contact[:, 0] != contact[:, 1]).float() * keep
+          sums["flight"] += (~contact.any(-1)).float() * keep
+          sums["base_height"] += s[:, 0] * keep
           sums["samples"] += keep
           sums["falls"] += term
           sq += (measured - commands).square() * keep[:, None]
@@ -133,7 +148,7 @@ def main():
         cases[name] = {
           "command": list(cmd), "velocity": (velocities[ids].sum(0) / samples).tolist(),
           "rmse": (sq[ids].sum(0) / samples).sqrt().tolist(),
-          "falls": int(x["falls"]), "stride_hz_per_foot": x["touchdowns"] / (samples * env.step_dt * 4),
+          "falls": int(x["falls"]), "stride_hz_per_foot": x["touchdowns"] / (samples * env.step_dt * nfeet),
           "mean_air_time_s": x["air_sum"] / touches,
           "mean_stance_time_s": x["stance_sum"] / touches,
           "short_swing_fraction": x["short_swings"] / touches,
@@ -145,6 +160,7 @@ def main():
           "action_delta_rms": (x["action_delta_sq"] / samples)**.5,
           "diagonal_contact_sync": x["diagonal_sync"] / samples,
           "front_contact_alternation": x["front_alternation"] / samples,
+          "flight_fraction": x["flight"] / samples, "mean_base_height_m": x["base_height"] / samples,
         }
       result = {"checkpoint": str(Path(path).resolve()), "iteration": checkpoint["iteration"],
                 "environment_backend": env.environment_backend,
@@ -153,10 +169,12 @@ def main():
                 "seconds": args.seconds, "repeats": args.repeats, "seed": args.seed, "cases": cases}
       if expert is not None:
         distances = {}
-        for name, vx in (("forward", 1.), ("fast", 1.5)):
+        style_commands = (("forward", .6), ("fast", 1.)) if env.robot_kind == "g1" else (
+          ("forward", 1.), ("fast", 1.5))
+        for name, vx in style_commands:
           torch.manual_seed(1701)
           distances[name] = heldout_style_distance(torch.cat(style_pairs[name]), expert, vx)
-        result.update(style_distance=distances, style_metric="a1_heldout_pairs_v1",
+        result.update(style_distance=distances, style_metric=f"{env.robot_kind}_heldout_pairs_v1",
                       style_metric_seed=1701, amp_motion_metadata=expert.metadata)
       results.append(result)
       print(json.dumps(result, indent=2), flush=True)

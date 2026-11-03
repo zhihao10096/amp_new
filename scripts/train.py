@@ -39,9 +39,12 @@ def main():
   if values["task"] == "A1-AMP-Flat" and not values["amp_motion_files"]:
     from go2_supermimic.amp import DEFAULT_A1_MOTIONS
     values["amp_motion_files"] = DEFAULT_A1_MOTIONS
+  if values["task"] == "G1-AMP-Flat" and not values["amp_motion_files"]:
+    from go2_supermimic.g1 import DEFAULT_G1_MOTIONS
+    values["amp_motion_files"] = DEFAULT_G1_MOTIONS
   cfg = TrainCfg(**values)
-  if cfg.task not in ("Go2-Velocity-Flat", "A1-AMP-Flat"):
-    parser.error("the available tasks are Go2-Velocity-Flat and A1-AMP-Flat")
+  if cfg.task not in ("Go2-Velocity-Flat", "A1-AMP-Flat", "G1-AMP-Flat"):
+    parser.error("available tasks: Go2-Velocity-Flat, A1-AMP-Flat, G1-AMP-Flat")
   launcher = AppLauncher(args)
   env = None
   try:
@@ -54,6 +57,9 @@ def main():
 
     torch.set_float32_matmul_precision(cfg.matmul_precision)
     env_cfg = A1AmpEnvCfg() if cfg.task == "A1-AMP-Flat" else Go2VelocityEnvCfg()
+    if cfg.task == "G1-AMP-Flat":
+      from go2_supermimic.env.g1_cfg import G1AmpEnvCfg
+      env_cfg = G1AmpEnvCfg()
     env_cfg.scene.num_envs = cfg.num_envs
     env_cfg.sim.device = args.device
     env_cfg.seed = cfg.seed

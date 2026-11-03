@@ -76,7 +76,8 @@ def main():
     if args.command is not None:
       env.set_command(args.command)
     obs, _ = env.reset()
-    actor = Actor(ckpt["obs_dim"], tuple(ckpt["cfg"]["actor_hidden"])).to(env.device)
+    actor = Actor(ckpt["obs_dim"], tuple(ckpt["cfg"]["actor_hidden"]),
+                  env.robot.num_joints).to(env.device)
     actor.load_state_dict(ckpt["actor"])
     actor.eval()
     if args.video:
@@ -107,7 +108,7 @@ def main():
             raise RuntimeError("Isaac Sim returned no video frame")
           video.add_image(annotate_frame(frame, commands[0].tolist(), velocity[0].tolist(),
                                           (step + 1) * env.step_dt,
-                                          "A1" if env.robot_kind == "a1" else "Go2"))
+                                          {"a1": "A1", "g1": "G1", "go2": "Go2"}[env.robot_kind]))
     samples = count * env.num_envs
     rmse = (squared / samples).sqrt().tolist()
     metrics = {"task": task_name, "checkpoint": str(Path(args.checkpoint).resolve()),

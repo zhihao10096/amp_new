@@ -3,13 +3,17 @@
 from go2_supermimic.amp import AMPDiscriminator
 from go2_supermimic.env.env_cfg import A1AmpEnvCfg, Go2VelocityEnvCfg
 from go2_supermimic.supermimic.train import task_from_dict
+from go2_supermimic.task_api import amp_api
 
 
 def evaluation_config(checkpoint, num_envs, device, observation_noise=False):
   task = checkpoint["cfg"].get("task", "Go2-Velocity-Flat")
-  if task not in ("Go2-Velocity-Flat", "A1-AMP-Flat"):
+  if task not in ("Go2-Velocity-Flat", "A1-AMP-Flat", "G1-AMP-Flat"):
     raise ValueError(f"unsupported checkpoint task: {task}")
   cfg = A1AmpEnvCfg() if task == "A1-AMP-Flat" else Go2VelocityEnvCfg()
+  if task == "G1-AMP-Flat":
+    from go2_supermimic.env.g1_cfg import G1AmpEnvCfg
+    cfg = G1AmpEnvCfg()
   if checkpoint.get("robot_kind", "go2") != cfg.robot_kind:
     raise ValueError("checkpoint task and robot metadata disagree")
   cfg.scene.num_envs = num_envs
@@ -28,6 +32,7 @@ def attach_evaluation_amp(env, checkpoint):
   if "amp" not in checkpoint:
     env.amp_discriminator = None
     return
-  disc = AMPDiscriminator(tuple(checkpoint["cfg"]["amp_hidden"])).to(env.device)
+  disc = amp_api(env.robot_kind).AMPDiscriminator(
+    tuple(checkpoint["cfg"]["amp_hidden"])).to(env.device)
   disc.load_state_dict(checkpoint["amp"])
   env.amp_discriminator = disc.eval().requires_grad_(False)

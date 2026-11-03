@@ -1,4 +1,4 @@
-# SuperMimic：Go2 Manager 与 A1 AMP 平地行走
+# SuperMimic：Manager、A1 / G1 AMP 平地行走
 
 当前目标、计划和开发机实际状态见 [GOAL.md](GOAL.md)、[PLAN.md](PLAN.md)、[STATUS.md](STATUS.md)。
 新Manager环境已通过预先记录的独立验收：7000/8000/9000三个相隔1000迭代检查点完整速度和步态全部达标，最终加噪、录像及来源/更新审计通过。
@@ -31,6 +31,35 @@ vx / vy / yaw-rate = **0.048 / 0.032 / 0.039**，独立标准/带噪声评估均
 2.63 Hz，1.5 m/s 从 8.71 降到 2.75 Hz，抬脚和滑移均改善；
 标准/带噪声完整评估合计 640 机器人分钟零摔倒。奖励、验收和训练参数见
 [步态验证记录](GAIT.md)，本地对比视频为 `videos/go2_gait_comparison.mp4`。
+
+## G1 AMP（实现已接入，正式收敛尚待验证）
+
+`G1-AMP-Flat` 使用本项目 `assets/robots/g1/` 的29DOF资产，以及Git管理的
+`assets/motions/g1/` 七份Walk_B动作。显式白名单排除run和走跑转换，源commit、SHA256、
+关节顺序与许可实际状态见数据README/manifest。每条动作前80%训练和参考重置，后20%
+时间留出，速度差分和插值均不跨split。默认无需reference目录。
+
+```bash
+python -m pytest tests --ignore=tests/test_exploration.py
+python tests/check_g1_isaaclab.py --headless --compile
+python scripts/train.py --headless --task G1-AMP-Flat \
+  --matmul-precision highest --compile-imagination --run-name g1_amp
+# 独立验收使用同一脚本的G1分支；报告必须来自正式model_0及连续三检查点。
+python scripts/check_amp_convergence.py --robot g1 \
+  --initial-checkpoint <model_0.pt> --baseline-gait <initial_gait.json> \
+  --benchmarks <velocity_reports.json> --gaits <gait_reports.json> \
+  --noisy <final_noisy.json> --output logs/amp_g1/convergence_report.json
+```
+
+G1是29维动作、480维策略历史、83维世界模型状态和8维足端计时，61维AMP特征
+包含角速度和关节位置/速度。真实与想象共享biped奖励、DC电机PD及限幅，actor经冻结
+世界模型/判别器的可微想象更新，四网络/四优化器均保存恢复，全程禁PPO。
+正式验收预先记录于[G1_CONVERGENCE.md](G1_CONVERGENCE.md)，当前实验配置和所选
+并行数见STATUS；接口或短跑通过不等于行走收敛。
+
+G1独立成功后进入X1：参考reference/AMP，仅下半身12DOF进入策略输出；X1参考动作
+复制到项目后用.gitignore忽略，来源/SHA256/split清单仍纳入Git。部署相关配置以该
+参考项目为依据，核对关节顺序、默认位姿、动作比例、PD、观测历史和控制周期；按用户要求跳过RKNN相关代码。
 
 ## 环境与安装
 

@@ -150,10 +150,12 @@ class MotionLibrary:
 
 
 class AMPDiscriminator(nn.Module):
-  def __init__(self, hidden: tuple[int, ...] = (512, 256)):
+  features = staticmethod(state_features)
+
+  def __init__(self, hidden: tuple[int, ...] = (512, 256), feature_dim: int = AMP_DIM):
     super().__init__()
-    self.norm = RunningNorm(AMP_DIM)
-    self.net = mlp(2 * AMP_DIM, hidden, 1, act=nn.LeakyReLU)
+    self.norm = RunningNorm(feature_dim)
+    self.net = mlp(2 * feature_dim, hidden, 1, act=nn.LeakyReLU)
 
   def forward(self, before: torch.Tensor, after: torch.Tensor) -> torch.Tensor:
     return self.net(torch.cat((self.norm(before), self.norm(after)), -1)).squeeze(-1)
@@ -161,7 +163,7 @@ class AMPDiscriminator(nn.Module):
   def reward(self, before: torch.Tensor, after: torch.Tensor, default_q: torch.Tensor,
              commands: torch.Tensor) -> torch.Tensor:
     # Deliberately retain state/action gradients; callers freeze only parameters.
-    score = self(state_features(before, default_q), state_features(after, default_q))
+    score = self(self.features(before, default_q), self.features(after, default_q))
     style = (1 - .25 * (score - 1).square()).clamp(min=0)
     return style * (commands.norm(dim=-1) > .1)
 

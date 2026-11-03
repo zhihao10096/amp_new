@@ -1,6 +1,6 @@
 # 目标、范围与完成条件
 
-- 总目标：先实现Manager based收敛，再参考`reference/rl_amp`实现A1 AMP平地行走；禁止使用PPO，沿用/扩展SuperMimic模型学习路线。
+- 总目标：已完成Manager based收敛与A1 AMP平地行走；当前参考`reference/legged_lab`实现G1 AMP平地walk，成功后参考`reference/AMP`实现X1 AMP行走（策略仅下半身12DOF）；禁止使用PPO，沿用/扩展SuperMimic模型学习路线。
 - Manager阶段已完成：随机来源7000/8000/9000连续通过完整速度/步态，最终加噪、录像和实际checkpoint来源/更新审计通过；证据MANAGER_CONVERGENCE.md。A1 AMP已独立通过1000/2000/3000三检查点、最终加噪/录像及审计，证据AMP_CONVERGENCE.md；下一阶段G1平地walk；两者均禁止PPO，不能以Manager完成代替总目标完成。
 - 用户已上传logs/videos并明确继续，撤销此前暂停约束；可以修复代码/依赖、运行实验和直接git commit。保留reference原状。
 - 维持MANAGER_CONVERGENCE.md预先记录的全部标准：三个相隔1000迭代的检查点同时通过20固定+3随机种子的速度及7指令步态评估，最终加噪复测及录像；正式训练来源必须为Manager随机初始化。
@@ -32,3 +32,10 @@ Manager、A1 AMP、G1 AMP各阶段完成时分别git commit。
 
 ## 范围变更（2026-11-04）
 用户明确将Go2 AMP改为A1 AMP，并要求更新goal。当前完整目标为：已完成Manager收敛 → 已完成A1 AMP平地行走 → 参考reference/legged_lab实现G1 AMP平地walk；全部禁用PPO，各阶段git提交。Go2 AMP不再属于目标。
+
+## X1后续阶段（2026-11-04新增）
+G1 AMP平地walk独立成功并提交后，参考`/pfs/user/learning/amp_new/reference/AMP`实现X1 AMP行走。策略只控制下半身12个自由度，上半身不纳入策略输出。继续世界模型/可微想象及禁PPO约束；训练前核对资产、关节映射、参考动作和独立行走验收。X1实际参考动作复制到当前项目目录后，**在.gitignore中忽略这些动作文件**；受Git管理的清单/文档保存来源、许可实际状态、SHA256、数据划分和恢复路径，不提交X1原始动作文件。实现/GPU更新与恢复/独立评估/录像成功后单独提交X1阶段。此要求仅针对X1，A1/G1实际动作仍随项目Git管理。总目标在X1完成前保持未完成。预算无新增硬上限。
+
+X1补充约束：部署相关的配置必须参考`/pfs/user/learning/amp_new/reference/AMP`的实现，训练/导出/部署的关节顺序、默认位姿、动作比例、PD增益、观测/历史与控制周期须逐项核对并验证。
+
+X1范围补充：复现时跳过RKNN相关代码，不要求RKNN转换、量化、编译或设备部署；其余部署相关配置仍参考reference/AMP并核对策略接口。

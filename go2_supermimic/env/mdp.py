@@ -84,11 +84,19 @@ def reset_robot(env, env_ids):
     root[:, 2] = torch.where(
       use_reference, frames[:, 2] + env.scene.env_origins[env_ids, 2], root[:, 2])
     root[:, 3:7] = torch.where(use_reference[:, None], orientation, root[:, 3:7])
-    root[:, 7:10] = quat_apply(orientation, frames[:, 31:34]) * use_reference[:, None]
-    root[:, 10:13] = quat_apply(orientation, frames[:, 34:37]) * use_reference[:, None]
-    joint_pos = torch.where(use_reference[:, None], leg_to_joint_order(frames[:, 7:19]), joint_pos)
-    joint_vel = torch.where(
-      use_reference[:, None], leg_to_joint_order(frames[:, 37:49]), joint_vel)
+    if env.robot_kind == "g1":
+      # Source velocities are world-frame; only the added random yaw rotates them.
+      yaw_quat = quat_from_euler_xyz(torch.zeros_like(yaw), torch.zeros_like(yaw), yaw)
+      root[:, 7:10] = quat_apply(yaw_quat, frames[:, 36:39]) * use_reference[:, None]
+      root[:, 10:13] = quat_apply(yaw_quat, frames[:, 39:42]) * use_reference[:, None]
+      joint_pos = torch.where(use_reference[:, None], frames[:, 7:36], joint_pos)
+      joint_vel = torch.where(use_reference[:, None], frames[:, 42:71], joint_vel)
+    else:
+      root[:, 7:10] = quat_apply(orientation, frames[:, 31:34]) * use_reference[:, None]
+      root[:, 10:13] = quat_apply(orientation, frames[:, 34:37]) * use_reference[:, None]
+      joint_pos = torch.where(use_reference[:, None], leg_to_joint_order(frames[:, 7:19]), joint_pos)
+      joint_vel = torch.where(
+        use_reference[:, None], leg_to_joint_order(frames[:, 37:49]), joint_vel)
   env.robot.write_root_pose_to_sim(root[:, :7], env_ids=env_ids)
   env.robot.write_root_velocity_to_sim(root[:, 7:], env_ids=env_ids)
   env.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
@@ -100,16 +108,17 @@ def capture_transition(env):
     state = robot_state(env).clone()
     before = env._state_before_action
     commands = env.commands.clone()
-    done = v.terminated(state, env.cfg.task)
-    _, terms = v.reward(
+    api = env.task_api
+    done = api.terminated(state, env.cfg.task)
+    _, terms = api.reward(
       before, state, env.actions, env.previous_actions, commands,
       env.consts, getattr(env, "training_task", env.cfg.task), env.step_dt, done, env.gait)
     env._reward_components = terms
-    env.gait, _ = v.advance_gait(
-      env.gait, before[:, v.CONTACT], state[:, v.CONTACT], env.step_dt)
+    env.gait, _ = api.advance_gait(
+      env.gait, before[:, api.CONTACT], state[:, api.CONTACT], env.step_dt)
     env.extras["transition"] = {
       "next_state": state, "commands": commands,
-      "linear_error": (state[:, v.V_B][:, :2] - commands[:, :2]).norm(dim=-1),
+      "linear_error": (state[:, api.V_B][:, :2] - commands[:, :2]).norm(dim=-1),
       "yaw_error": (state[:, 9] - commands[:, 2]).abs(),
     }
     # Native reset logs contain episodic Python scalars; per-step tensor
@@ -128,7 +137,7 @@ def capture_transition(env):
 
 
 def fallen(env):
-  return v.terminated(capture_transition(env), env.cfg.task)
+  return env.task_api.terminated(capture_transition(env), env.cfg.task)
 
 
 def reward_component(env, name: str):

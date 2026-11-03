@@ -1,0 +1,106 @@
+{
+  "source_repository": "https://github.com/zitongbai/legged_lab",
+  "source_commit": "f33a18904e5209d9aceb95ef78ed82412c5f2072",
+  "source_directory": "source/legged_lab/legged_lab/data/MotionData/g1_29dof/amp/walk_and_run",
+  "license": "Upstream README declares MIT; no standalone LICENSE file at this commit. Retargeted motion-specific upstream rights are not separately documented. See README.md.",
+  "quaternion": "WXYZ",
+  "joint_order": "Isaac Lab breadth-first, listed in joint_names",
+  "key_body_names": [
+    "left_ankle_roll_link",
+    "right_ankle_roll_link",
+    "left_wrist_yaw_link",
+    "right_wrist_yaw_link",
+    "left_shoulder_roll_link",
+    "right_shoulder_roll_link"
+  ],
+  "train_fraction": 0.8,
+  "motions": [
+    {
+      "file": "Walk_B10_-_Walk_turn_left_45_stageii.pkl",
+      "sha256": "b9c2f296269b79b4d4de0f5cfbc765b4cac205e8a35b8fd8a7e8ceb6c70a62d8",
+      "frames": 252,
+      "frame_dt": 0.03343253968253968,
+      "split_frame": 201,
+      "weight": 1.0
+    },
+    {
+      "file": "Walk_B13_-_Walk_turn_right_45_stageii.pkl",
+      "sha256": "02ebfe3c7080e90f48a5f3e151c9ae612e5ef9dfab6aa455d839ba054a6fc512",
+      "frames": 279,
+      "frame_dt": 0.03333333333333333,
+      "split_frame": 223,
+      "weight": 1.0
+    },
+    {
+      "file": "Walk_B15_-_Walk_turn_around_stageii.pkl",
+      "sha256": "c6df907816937d994911c9409f212033957c7497209eec4c40355200f9397fba",
+      "frames": 341,
+      "frame_dt": 0.03340664711632454,
+      "split_frame": 272,
+      "weight": 1.0
+    },
+    {
+      "file": "Walk_B16_-_Walk_turn_change_stageii.pkl",
+      "sha256": "b6a0e3335b7fc4c83001d39fbdbd458f3d5dfc1dfec9db7e80c745811674f6bb",
+      "frames": 363,
+      "frame_dt": 0.03337924701561065,
+      "split_frame": 290,
+      "weight": 1.0
+    },
+    {
+      "file": "Walk_B22_-_Side_step_left_stageii.pkl",
+      "sha256": "150c0dd6e7517b97bf13ca60c6a92d5503eebe16a799b84e5ab4d2007d0ea0cd",
+      "frames": 138,
+      "frame_dt": 0.033514492753623185,
+      "split_frame": 110,
+      "weight": 1.0
+    },
+    {
+      "file": "Walk_B23_-_Side_step_right_stageii.pkl",
+      "sha256": "a575e2f7fc70ca95cc2c6f165e543058acd3d3cb13ba0d3b7dfa9bdca0f4d5c2",
+      "frames": 107,
+      "frame_dt": 0.033489096573208726,
+      "split_frame": 85,
+      "weight": 1.0
+    },
+    {
+      "file": "Walk_B4_-_Stand_to_Walk_Back_stageii.pkl",
+      "sha256": "b976d7623a094f02bbe2089022bde2a3ccdfc820afb3ffda83ad164f3e70ea1f",
+      "frames": 388,
+      "frame_dt": 0.033397766323024054,
+      "split_frame": 310,
+      "weight": 1.0
+    }
+  ],
+  "joint_names": [
+    "left_hip_pitch_joint",
+    "right_hip_pitch_joint",
+    "waist_yaw_joint",
+    "left_hip_roll_joint",
+    "right_hip_roll_joint",
+    "waist_roll_joint",
+    "left_hip_yaw_joint",
+    "right_hip_yaw_joint",
+    "waist_pitch_joint",
+    "left_knee_joint",
+    "right_knee_joint",
+    "left_shoulder_pitch_joint",
+    "right_shoulder_pitch_joint",
+    "left_ankle_pitch_joint",
+    "right_ankle_pitch_joint",
+    "left_shoulder_roll_joint",
+    "right_shoulder_roll_joint",
+    "left_ankle_roll_joint",
+    "right_ankle_roll_joint",
+    "left_shoulder_yaw_joint",
+    "right_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "right_elbow_joint",
+    "left_wrist_roll_joint",
+    "right_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "right_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+    "right_wrist_yaw_joint"
+  ]
+}

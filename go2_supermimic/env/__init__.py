@@ -21,3 +21,10 @@ gym.register(
   disable_env_checker=True,
   kwargs={"env_cfg_entry_point": "go2_supermimic.env.env_cfg:A1AmpEnvCfg"},
 )
+
+gym.register(
+  id="G1-AMP-Flat",
+  entry_point="go2_supermimic.env.velocity_env:Go2VelocityEnv",
+  disable_env_checker=True,
+  kwargs={"env_cfg_entry_point": "go2_supermimic.env.g1_cfg:G1AmpEnvCfg"},
+)

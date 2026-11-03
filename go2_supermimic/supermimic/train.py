@@ -19,6 +19,7 @@ from go2_supermimic.supermimic.buffer import ReplayBuffer
 from go2_supermimic.supermimic.curriculum import curriculum_fraction, training_task
 from go2_supermimic.supermimic.imagine import CRITIC_DIM, ImagineCfg, Imagination
 from go2_supermimic.supermimic.world_model import RunningNorm, WorldModel, mlp
+from go2_supermimic.task_api import amp_api, task_api
 
 CHECKPOINT_FORMAT = "isaaclab_velocity_v2"
 LEGACY_FORMAT = "isaaclab_velocity_v1"
@@ -139,7 +140,7 @@ def task_from_dict(data):
   data = dict(data)
   data["commands"] = v.CommandCfg(**data["commands"])
   weights = dict(data["rewards"])
-  if data.get("reward_profile") != "unitree_gait":
+  if data.get("reward_profile") not in ("unitree_gait", "g1_walk"):
     for name in ("feet_clearance", "feet_contact_without_command", "gait_duration", "diagonal_gait"):
       weights[name] = 0.0
   if "reward_profile" not in data:
@@ -147,32 +148,37 @@ def task_from_dict(data):
     for name in ("joint_velocity", "energy", "feet_air_time", "air_time_variance",
                  "feet_slide", "undesired_contacts"):
       weights[name] = 0.0
-  data["rewards"] = v.RewardWeights(**weights)
+  api = task_api("g1" if data.get("reward_profile") == "g1_walk" else "go2")
+  data["rewards"] = api.RewardWeights(**weights)
   return v.VelocityTaskCfg(**data)
 
 
 class Trainer:
   def __init__(self, cfg: TrainCfg, env):
     self.cfg, self.env = cfg, env
+    api = self.api = task_api(env.robot_kind)
+    self.critic_dim = api.STATE_DIM + api.GAIT_DIM + api.NUM_JOINTS + 4
     self.device = env.device
     torch.manual_seed(cfg.seed)
     obs, _ = env.reset()
     self.obs = obs["policy"]
-    self.wm = WorldModel(cfg.wm_hidden).to(self.device)
-    self.actor = Actor(self.obs.shape[-1], cfg.actor_hidden).to(self.device)
-    self.critic = Critic(CRITIC_DIM, cfg.critic_hidden).to(self.device)
+    self.wm = WorldModel(cfg.wm_hidden, api.STATE_DIM, api.NUM_JOINTS).to(self.device)
+    self.actor = Actor(self.obs.shape[-1], cfg.actor_hidden, api.NUM_JOINTS).to(self.device)
+    self.critic = Critic(self.critic_dim, cfg.critic_hidden).to(self.device)
     self.opt_wm = torch.optim.Adam(self.wm.parameters(), lr=cfg.lr)
     self.opt_actor = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr, betas=(0.9, 0.95))
     self.opt_critic = torch.optim.Adam(self.critic.parameters(), lr=cfg.lr)
-    self.amp = AMPDiscriminator(cfg.amp_hidden).to(self.device) if env.cfg.amp_enabled else None
+    self.amp = amp_api(env.robot_kind).AMPDiscriminator(cfg.amp_hidden).to(
+      self.device) if env.cfg.amp_enabled else None
     self.opt_amp = (torch.optim.Adam(self.amp.parameters(), lr=cfg.amp_lr, weight_decay=1e-4)
                     if self.amp is not None else None)
     self.env.amp_discriminator = self.amp
-    self.buf = ReplayBuffer(cfg.num_envs, cfg.buffer_len, self.obs.shape[-1], self.device)
+    self.buf = ReplayBuffer(cfg.num_envs, cfg.buffer_len, self.obs.shape[-1], self.device,
+                            api.STATE_DIM, api.NUM_JOINTS, api.GAIT_DIM)
     self.imag = Imagination(
       ImagineCfg(horizon=cfg.horizon, dt=env.step_dt, compile=cfg.compile_imagination),
       env.cfg.task, env.consts, amp=self.amp)
-    self.ou = torch.zeros(cfg.num_envs, v.NUM_JOINTS, device=self.device)
+    self.ou = torch.zeros(cfg.num_envs, api.NUM_JOINTS, device=self.device)
     self.explore = torch.arange(cfg.num_envs, device=self.device) < int(cfg.explore_frac * cfg.num_envs)
     self.start_it = self.env_steps = 0
     self.training_origin = {
@@ -348,8 +354,8 @@ class Trainer:
     for _ in range(self.cfg.amp_updates):
       before, after = self.buf.sample_pairs(self.cfg.amp_batch)
       with torch.no_grad():
-        policy = (state_features(before, self.env.consts.default_q),
-                  state_features(after, self.env.consts.default_q))
+        policy = (self.amp.features(before, self.env.consts.default_q),
+                  self.amp.features(after, self.env.consts.default_q))
         expert = self.env.amp_motion.sample_pairs(self.cfg.amp_batch, train=True)
       loss, values = self.amp.loss(expert, policy, self.cfg.amp_grad_penalty)
       self._update(loss, self.amp, self.opt_amp)
@@ -374,7 +380,7 @@ class Trainer:
       for model in frozen:
         model.requires_grad_(True)
     targets = self.imag.gae_targets(self.critic, data).reshape(-1)
-    inputs = data["critic_in"][:, :-1].reshape(-1, CRITIC_DIM)
+    inputs = data["critic_in"][:, :-1].reshape(-1, self.imag.critic_dim)
     self.critic.norm.update(inputs)
     losses = []
     for _ in range(self.cfg.critic_epochs):

@@ -19,6 +19,7 @@ def read_reports(paths):
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument("--robot", choices=("a1", "g1"), default="a1")
   parser.add_argument("--benchmarks", nargs="+", required=True)
   parser.add_argument("--gaits", nargs="+", required=True)
   parser.add_argument("--baseline-gait", required=True)
@@ -26,25 +27,40 @@ def main():
   parser.add_argument("--initial-checkpoint", required=True)
   parser.add_argument("--output", required=True)
   args = parser.parse_args()
+  if args.robot == "g1":
+    from go2_supermimic.g1 import DEFAULT_G1_MOTIONS, MotionLibrary as G1MotionLibrary
+    from go2_supermimic.g1_validation import g1_convergence_failures
+    motion_class, motion_files = G1MotionLibrary, DEFAULT_G1_MOTIONS
+    convergence_check = g1_convergence_failures
+  else:
+    motion_class, motion_files = MotionLibrary, DEFAULT_A1_MOTIONS
+    convergence_check = a1_convergence_failures
+  expected_task = {"a1": "A1-AMP-Flat", "g1": "G1-AMP-Flat"}[args.robot]
   velocity, gait = read_reports(args.benchmarks), read_reports(args.gaits)
   noise, baseline = read_reports([args.noisy]), read_reports([args.baseline_gait])
   failures = []
   if len(noise) != 1 or len(baseline) != 1:
     failures.append("require_one_noisy_and_one_initial_gait_report")
-  failures += a1_convergence_failures(
+  failures += convergence_check(
     velocity, gait, noise[0] if noise else {}, baseline[0] if baseline else {})
   initial_path = Path(args.initial_checkpoint).resolve()
   initial = load_checkpoint(initial_path, "cpu")
-  expected_motion = MotionLibrary(DEFAULT_A1_MOTIONS, "cpu", dt=.02).metadata
+  expected_motion = motion_class(motion_files, "cpu", dt=.02).metadata
   if (initial["iteration"] != 0 or initial["cfg"]["resume"]
-      or initial.get("robot_kind") != "a1"
+      or initial.get("robot_kind") != args.robot
       or initial.get("environment_backend") != MANAGER_BACKEND
-      or initial["cfg"]["task"] != "A1-AMP-Flat"
+      or initial["cfg"]["task"] != expected_task
       or initial.get("amp_motion_metadata") != expected_motion):
     failures.append("initial_checkpoint_provenance")
   if not baseline or Path(baseline[0].get("checkpoint", "")).resolve() != initial_path:
     failures.append("baseline_not_initial_checkpoint")
   source = initial.get("training_origin", {})
+  if args.robot == "g1":
+    from dataclasses import asdict
+    from go2_supermimic.g1 import walk_task
+    if (source.get("kind") != "random_initialization" or initial["cfg"].get("warm_start")
+        or initial["task_cfg"] != asdict(walk_task()) or initial.get("obs_dim") != 480):
+      failures.append("g1_formal_initial_task_or_random_origin")
   source_record = dict(source)
   if source.get("kind") == "warm_start":
     path = Path(source["checkpoint"])
@@ -62,9 +78,9 @@ def main():
   for report in sorted(velocity, key=lambda r: r.get("iteration", -1)):
     path = Path(report["checkpoint"])
     checkpoint = load_checkpoint(path, "cpu")
-    if (checkpoint.get("robot_kind") != "a1"
+    if (checkpoint.get("robot_kind") != args.robot
         or checkpoint.get("environment_backend") != MANAGER_BACKEND
-        or checkpoint["cfg"]["task"] != "A1-AMP-Flat"
+        or checkpoint["cfg"]["task"] != expected_task
         or checkpoint.get("training_origin") != source
         or checkpoint["iteration"] != report["iteration"]
         or checkpoint["task_cfg"] != initial["task_cfg"]

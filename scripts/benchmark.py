@@ -32,11 +32,14 @@ def main():
 
     import go2_supermimic.env
     from go2_supermimic.amp_validation import A1_FIXED_CASES
+    from go2_supermimic.g1_validation import G1_FIXED_CASES
     from go2_supermimic.env.factory import attach_evaluation_amp, evaluation_config
     from go2_supermimic.supermimic.train import Actor, load_checkpoint
 
     checkpoints = [load_checkpoint(path, args.device) for path in args.checkpoints]
     cases = A1_FIXED_CASES if checkpoints[0].get("robot_kind") == "a1" else CASES
+    if checkpoints[0].get("robot_kind") == "g1":
+      cases = G1_FIXED_CASES
     task_name, cfg = evaluation_config(
       checkpoints[0], len(cases) * args.repeats, args.device, args.observation_noise)
     cfg.seed = args.seeds[0]
@@ -56,6 +59,7 @@ def main():
       velocity_sum = torch.zeros_like(sq)
       samples = torch.zeros(n, device=env.device)
       falls = torch.zeros(n, device=env.device)
+      flight = torch.zeros_like(falls)
       previous = env.commands.clone()
       age = torch.zeros(n, device=env.device, dtype=torch.long)
       for _ in range(steps):
@@ -71,6 +75,8 @@ def main():
         velocity_sum += actual * keep[:, None]
         samples += keep
         falls += term
+        contact = transition["next_state"][:, env.task_api.CONTACT]
+        flight += (contact < .5).all(-1) * keep
         age += 1
         age[term | trunc] = 0
         previous = target.clone()
@@ -83,6 +89,7 @@ def main():
                 "mean_velocity": (velocity_sum[ids].sum(0) / samples[ids].sum()).tolist(),
                 "falls": int(falls[ids].sum().item()),
                 "falls_per_minute": falls[ids].mean().item() * 60 / (steps * env.step_dt),
+                "flight_fraction": (flight[ids].sum() / samples[ids].sum()).item(),
                 "samples_after_settling": int(samples[ids].sum().item())}
 
       result = {"seed": seed, "overall": summarize(slice(None))}
@@ -98,7 +105,8 @@ def main():
           or checkpoint.get("robot_kind", "go2") != env.robot_kind):
         raise ValueError("benchmark checkpoints must use identical task settings")
       attach_evaluation_amp(env, checkpoint)
-      actor = Actor(checkpoint["obs_dim"], tuple(checkpoint["cfg"]["actor_hidden"])).to(env.device)
+      actor = Actor(checkpoint["obs_dim"], tuple(checkpoint["cfg"]["actor_hidden"]),
+                    env.robot.num_joints).to(env.device)
       actor.load_state_dict(checkpoint["actor"])
       actor.eval()
       print(f"Benchmark iteration {checkpoint['iteration']}: fixed command suite", flush=True)
