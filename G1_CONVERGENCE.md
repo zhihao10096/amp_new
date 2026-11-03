@@ -56,3 +56,16 @@
 判别器节流已通过CPU50项（48受Git管理+原未跟踪exploration的2项，cpu_discriminator_throttle.log）及原生GPU编译/真实四网络四优化器更新/保存恢复。interval5时20→25的D步数3→4、actor16→21/critic36→46/WM20→25；CLI继承interval/GP，显式D lr2e-5覆盖已保存优化器；旧检查点缺新字段默认interval1，D18→23。证据discriminator_throttle_validation.audit.json及pipeline.json，所有网络继续更新且有限。
 
 第二轮正式实验决定：新随机初始化seed0、独立model_0；18432环境及R1全部学习批次/WM预热300/critic200/actor_ramp500/AMP_ramp1000不变，仅D每5迭代更新2步、lr1e-5、GP40，最终AMP权重.5。先训练至3000，保存1000/2000/3000并对三者分别完整速度/步态/留出风格评估；连续三点全过后再最终加噪/录像/实际审计。D再次饱和且学习停滞时提前保存并定位，不无限续训；参考关节行为不接入，正式数据仅真实策略+原有随机探索/RSI。尚未启动新正式队列，启动前提交代码/记录。
+
+
+## 第二轮完成与探索幅度对照决定（2026-11-04）
+
+R2随机来源训练及三点完整评估已结束：1000/2000/3000固定RMSE分别(.805,.331,.391)、(.648,.191,.440)、(.637,.226,.410)，摔倒1620/2/52；0.6m/s步频三点均为0。3000留出风格改善41.8%/46.5%，但实际仍原地站立。判别器节流改善D信号，未解决行走；停止R2同配置续训。证据logs/amp_g1/formal_r2_summary.json及三份assessment和checkpoint审计。
+
+动作响应初诊加入零扰动对照后发现，普通站立复制状态的接触求解差异与所测响应同量级，不能据此断言WM梯度错误。参考状态1步腿部线速度响应cos=.838、4步=.312（零扰动RMS约信号10%），提示多步模型仍有改善空间，但先不修改WM结构。两份报告action_response_r2.json、action_response_r2_control.json；只用训练split，不作为收敛证据。
+
+真实噪声覆盖诊断：R2 actor/普通reset/0.6m/s指令/32env每设置/12s。OU .3→.6使单脚支撑5.75%→20.93%、接触变化1.17→3.35次/秒、关节速度RMS .906→1.490；双脚腾空.025%→.192%，摔倒24.69→35.00/分钟。Gaussian .6及更大噪声腾空7%以上，暂不采用。报告noise_coverage_r2.json。该诊断只证明增加实际采样覆盖，不证明产生合格步态。训练参考关节目标动作的腿部绝对偏移90分位1.115、髋/膝单关节90分位约1.3–2.0；现有OU .3覆盖偏小，详见exploration_action_coverage.json。
+
+已检索GitHub NVlabs/DiffRL（SHAC）的shac.py和models/actor.py：可微actor默认支持Normal.rsample探索；其直接可微物理与本项目学习WM不同，不移植其算法、损失或噪声数值，仅核对探索与可微策略优化相容。原文与URL保留github_action_gradient_research.json、github_shac_actor.json；参数选择依据本项目真实噪声对照。
+
+第三轮R3决定：重新随机初始化seed0，独立model_0；只把explore_noise .3改为.6，仍25%环境用OU、其余Gaussian .1；18432环境、学习批次、D interval5/lr1e-5/GP40、奖励、任务、split、最终验收全部与R2相同。先训练至3000并完整评估1000/2000/3000；初始审计要求与R2四网络逐位一致、cfg仅run_name/stop_file/explore_noise变化，以检验探索不足假设。若仍原地站立则按证据继续定位，不降低标准；G1独立成功前不进入X1。
