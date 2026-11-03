@@ -11,5 +11,4 @@ logs/
 videos/
 checkpoints/
 *.pt
-!weights/*.pt
 *.mp4

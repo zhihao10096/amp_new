@@ -1,18 +1,16 @@
-"""Registers the chase / dodge tasks with mjlab's task registry on import."""
+"""Register only the Isaac Lab velocity tracking task.
 
-from mjlab.rl import RslRlOnPolicyRunnerCfg
-from mjlab.tasks.registry import register_mjlab_task
+Import after AppLauncher has started Isaac Sim. Pure Torch modules do not import
+this package, so unit tests and checkpoint inspection need no simulator.
+"""
 
-from go2_supermimic.env.env_cfg import go2_chase_env_cfg
+import gymnasium as gym
 
-for task_id, kw in (
-  ("Go2-Chase-Flat", {}),
-  ("Go2-Chase-Obstacles", {"obstacles": True}),
-  ("Go2-Chase-Terrain", {"terrain": True}),
-):
-  register_mjlab_task(
-    task_id=task_id,
-    env_cfg=go2_chase_env_cfg(**kw),
-    play_env_cfg=go2_chase_env_cfg(play=True, **kw),
-    rl_cfg=RslRlOnPolicyRunnerCfg(),  # unused: training is SuperMimic (scripts/train.py)
-  )
+TASK_ID = "Go2-Velocity-Flat"
+
+gym.register(
+  id=TASK_ID,
+  entry_point="go2_supermimic.env.velocity_env:Go2VelocityEnv",
+  disable_env_checker=True,
+  kwargs={"env_cfg_entry_point": "go2_supermimic.env.env_cfg:Go2VelocityEnvCfg"},
+)

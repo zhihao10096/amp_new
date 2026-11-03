@@ -1,22 +1,12 @@
-"""Deterministic world model f(s, a, a_prev, xi, ground scan) -> (s', planar pose delta).
-
-Fit on k-step autoregressive windows from the replay buffer (SuperMimic Eq. 1,
-state term only; reward and termination are analytic in imagine.py). Inputs
-and outputs are normalized with running statistics from collected data.
-"""
-
-from __future__ import annotations
+"""Normalized deterministic dynamics, fit on autoregressive transition windows."""
 
 import torch
 from torch import nn
 
-from go2_supermimic.supermimic import state as st
-from go2_supermimic.target.terrain import SCAN_POINTS
+from go2_supermimic.velocity import NUM_JOINTS, STATE_DIM
 
 
 class RunningNorm(nn.Module):
-  """Running mean/std over batches (Welford-style merge), frozen when not updated."""
-
   def __init__(self, dim: int, eps: float = 1e-4, clip: float = 10.0):
     super().__init__()
     self.register_buffer("mean", torch.zeros(dim))
@@ -25,73 +15,55 @@ class RunningNorm(nn.Module):
     self.clip = clip
 
   @torch.no_grad()
-  def update(self, x: torch.Tensor) -> None:
+  def update(self, x):
     x = x.reshape(-1, x.shape[-1])
-    b_mean, b_var, b_n = x.mean(0), x.var(0, unbiased=False), x.shape[0]
-    delta = b_mean - self.mean
-    tot = self.count + b_n
-    self.mean += delta * b_n / tot
-    self.var = (self.var * self.count + b_var * b_n + delta**2 * self.count * b_n / tot) / tot
-    self.count = tot
+    if x.shape[0] == 0:
+      return
+    mean, var, count = x.mean(0), x.var(0, unbiased=False), x.shape[0]
+    delta, total = mean - self.mean, self.count + count
+    self.mean.add_(delta * count / total)
+    self.var.copy_((self.var * self.count + var * count
+                    + delta.square() * self.count * count / total) / total)
+    self.count.copy_(total)
 
-  def forward(self, x: torch.Tensor) -> torch.Tensor:
+  def forward(self, x):
     return ((x - self.mean) / (self.var.sqrt() + 1e-6)).clamp(-self.clip, self.clip)
 
-  def unnormalize(self, y: torch.Tensor) -> torch.Tensor:
-    return y * (self.var.sqrt() + 1e-6) + self.mean
+  def unnormalize(self, x):
+    return x * (self.var.sqrt() + 1e-6) + self.mean
 
 
-def mlp(in_dim: int, hidden: tuple[int, ...], out_dim: int, act=nn.SiLU) -> nn.Sequential:
-  layers, d = [], in_dim
-  for h in hidden:
-    layers += [nn.Linear(d, h), act()]
-    d = h
-  layers.append(nn.Linear(d, out_dim))
+def mlp(in_dim, hidden, out_dim, act=nn.SiLU):
+  layers = []
+  for size in hidden:
+    layers.extend([nn.Linear(in_dim, size), act()])
+    in_dim = size
+  layers.append(nn.Linear(in_dim, out_dim))
   return nn.Sequential(*layers)
 
 
 class WorldModel(nn.Module):
-  """s' = f(s, a, a_prev, xi, scan). The scan is the base height above each point
-  of the local ground grid (terrain and obstacles, see target/terrain.py), so
-  stepping onto a stair or pushing into a wall is predictable."""
-
-  def __init__(self, hidden: tuple[int, ...] = (1024, 1024, 1024)):
+  def __init__(self, hidden=(512, 512, 512)):
     super().__init__()
-    in_dim = st.STATE_DIM + 2 * st.NUM_JOINTS + st.CONTEXT_DIM + SCAN_POINTS
-    out_dim = st.STATE_DIM + st.POSE_DELTA_DIM
-    self.net = mlp(in_dim, hidden, out_dim)
+    in_dim = STATE_DIM + 2 * NUM_JOINTS
+    self.net = mlp(in_dim, hidden, STATE_DIM)
     self.in_norm = RunningNorm(in_dim)
-    # Normalizes the per-step change of s and the pose delta.
-    self.out_norm = RunningNorm(out_dim)
+    self.out_norm = RunningNorm(STATE_DIM)
 
-  @staticmethod
-  def _inputs(s, a, a_prev, xi, relief):
-    return torch.cat([s, a, a_prev, xi, s[:, st.Z] + relief], dim=-1)
+  def update_stats(self, s, action, previous_action, next_state):
+    self.in_norm.update(torch.cat([s, action, previous_action], -1))
+    self.out_norm.update(next_state - s)
 
-  def update_stats(self, s, a, a_prev, xi, relief, s_next, pose_delta) -> None:
-    self.in_norm.update(self._inputs(s, a, a_prev, xi, relief))
-    self.out_norm.update(torch.cat([s_next - s, pose_delta], dim=-1))
+  def forward(self, s, action, previous_action):
+    x = torch.cat([s, action, previous_action], -1)
+    return s + self.out_norm.unnormalize(self.net(self.in_norm(x)))
 
-  def forward(self, s, a, a_prev, xi, relief):
-    """relief (B, P): ground under the base minus the ground at each scan point.
-    Returns (s_next, pose_delta)."""
-    y = self.out_norm.unnormalize(self.net(self.in_norm(self._inputs(s, a, a_prev, xi, relief))))
-    return s + y[:, : st.STATE_DIM], y[:, st.STATE_DIM :]
-
-  def loss(self, s0, actions, actions_prev, xi, reliefs, s_targets, pose_targets, valid):
-    """k-step autoregressive loss in normalized output units.
-
-    s0 (B, S); actions, actions_prev (B, k, 12); xi (B, C); reliefs (B, k, P) at
-    the recorded poses; s_targets (B, k, S); pose_targets (B, k, 3); valid (B, k)
-    masks steps after a reset inside the window.
-    """
-    k = actions.shape[1]
+  def loss(self, states, next_states, actions, previous_actions, valid):
+    s = states[:, 0]
+    total = s.new_zeros(())
     scale = self.out_norm.var.sqrt() + 1e-6
-    s = s0
-    total, denom = 0.0, valid.sum().clamp(min=1.0)
-    for j in range(k):
-      s_pred, pose_pred = self(s, actions[:, j], actions_prev[:, j], xi, reliefs[:, j])
-      err = torch.cat([s_pred - s_targets[:, j], pose_pred - pose_targets[:, j]], dim=-1)
-      total = total + ((err / scale) ** 2).mean(-1).mul(valid[:, j]).sum()
-      s = s_pred
-    return total / denom
+    for j in range(actions.shape[1]):
+      s = self(s, actions[:, j], previous_actions[:, j])
+      error = ((s - next_states[:, j]) / scale).square().mean(-1)
+      total = total + (error * valid[:, j]).sum()
+    return total / valid.sum().clamp(min=1)

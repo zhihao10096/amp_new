@@ -1,1 +1,1 @@
-"""Go2 chasing and dodging with SuperMimic model-based RL in mjlab."""
+"""Go2 velocity tracking with SuperMimic model-based RL in Isaac Lab."""
