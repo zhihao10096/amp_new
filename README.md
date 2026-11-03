@@ -161,6 +161,12 @@ python scripts/benchmark.py --headless --checkpoints <model.pt> \
 # 7 种固定指令的步频、腾空时长、抬脚高度、足滑和能耗对比。
 python scripts/gait_eval.py --headless --checkpoints <old.pt> <new.pt> \
   --output logs/gait/comparison.json --seconds 20 --repeats 8
+
+# A1独立验收：基线必须是本次正式训练的model_0，三模型间隔1000迭代。
+python scripts/check_amp_convergence.py --initial-checkpoint <model_0.pt> \
+  --baseline-gait <initial_gait.json> --benchmarks <three_velocity_reports.json> \
+  --gaits <three_gait_reports.json> --noisy <final_noisy_velocity.json> \
+  --output logs/amp_a1/convergence_report.json
 ```
 
 不带 `--headless` 可打开 Isaac Sim 窗口。评估关闭观测噪声，随机种子默认 42；固定

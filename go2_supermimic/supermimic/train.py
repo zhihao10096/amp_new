@@ -364,8 +364,11 @@ class Trainer:
     for model in frozen:
       model.requires_grad_(False)
     try:
-      objective, data = self.imag.rollout(
-        self.wm, self.actor, self.critic, self.buf.sample_states(self.cfg.imag_batch))
+      # Critic warm-up consumes detached trajectories; keeping the actor's
+      # entire differentiable rollout alive here needlessly holds GPU memory.
+      with torch.set_grad_enabled(update_actor):
+        objective, data = self.imag.rollout(
+          self.wm, self.actor, self.critic, self.buf.sample_states(self.cfg.imag_batch))
       norm = self._update(-objective.mean(), self.actor, self.opt_actor) if update_actor else 0
     finally:
       for model in frozen:

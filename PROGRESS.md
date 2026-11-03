@@ -20,3 +20,19 @@
 ## 下一步
 - 先核实无运行进程，再测8k/16k/32k吞吐/显存/学习质量，尽量提高GPU利用率；然后启动有独立model_0的正式A1训练，按锁定标准完整评估/录像/审计。通过并提交后进入G1。下一条可执行命令见STATUS。
 - 历史：[A1实现排查](docs/history/PROGRESS_2026-11-04_a1_implementation.md)、[Manager过程](docs/history/PROGRESS_2026-11-04_manager.md)、[更早记录](docs/history/PROGRESS_2026-11-03.md)。
+
+- A1 8k吞吐实验已启动PID2508085（基于52b35b6，无源码改动）；100迭代/collect1/buffer128，WM4096×4/window8，imag8192/H32，AMP2048×2；日志logs/amp_a1/perf8k.log，命令perf8k.process.json。正式训练尚未开始；下一命令tail -n 3 logs/amp_a1/perf8k.log并核实PID。
+
+- 8k性能实验2508085已结束，末段34570真实转移/s，峰值15772MiB（监控从中途开始），无物理/CUDA报错；16k同配置100迭代对照启动PID2510222，监控PID2510223，命令/日志logs/amp_a1/perf16k.process.json和perf16k.log。尚无正式训练；下一命令tail -n 2 logs/amp_a1/perf16k.log。
+
+- 16k性能实验2510222结束，末段62514真实转移/s、峰值18888MiB，末段0摔倒且无物理/CUDA错误；32k同配置100迭代对照启动PID2511912，监控PID2511913，命令/日志logs/amp_a1/perf32k.process.json和perf32k.log。正式训练仍未开始；下一命令tail -n 2 logs/amp_a1/perf32k.log。
+
+- A1三检查点/初始风格基线/最终加噪及实际模型审计已补齐，CPU回归PID2513785（cpu_convergence.log）；此改动仅涉及验收工具，不改变运行中的训练算法或数据。
+
+- 32k/8192imag首轮OOM退出，峰值24206MiB；traceback定位critic warmup第一个gae_targets对全部8192×33状态求值时，未执行actor更新的想象仍保留完整反传图。PyTorch分配13.14GiB且仅155MiB缓存空闲，不是碎片主因；优先避免critic warmup无用的actor计算图，再实测32k，暂不缩减并行数/batch/回放。CPU验收工具42项通过（cpu_convergence.log）。
+
+- 已修复critic warmup无actor更新时仍保留想象图：torch.set_grad_enabled(update_actor)，actor正式更新保留完整反传。CPU43项通过（cpu_warmup_memory.log），含预热只更新critic且不建actor图的回归。原32k/buffer128/imag8192/H32完整配置重试PID2516078，监控2516079，日志perf32k_nograd.log，配置未缩减；尚无正式训练。
+
+- 32k no-grad修复复测2516078已结束；原始全部batch/回放未缩减，稳定约11万真实转移/s、峰值20258MiB、GPU峰值97%，四网络/四优化器真实更新和有限性通过，无物理/CUDA错误。性能汇总performance_summary.json：选择32768env/collect1/buffer128/WM4096×4/window8/imag8192/H32作为正式A1配置，actor_lr_scale=.15，预热300+200/ramp500，AMP.5/ramp1000/RSI.5。正式训练将从Manager跨机器人热启动并新建A1 model_0，不复用性能模型；先跑1000再完整评估。
+
+- 训练准备版本a1-amp-training-ready-20261104纳入critic预热关闭无用actor图、完整A1三检查点/初始基线/加噪/实际模型审计。CPU43项通过；32k全部batch/回放不变，真实100次四网络更新/保存/有限性通过，峰值20258MiB；短跑负例被审计明确拒绝。下一步提交后正式训练1000迭代，并独立评估。

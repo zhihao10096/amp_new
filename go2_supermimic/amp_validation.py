@@ -89,3 +89,36 @@ def a1_gait_failures(report: dict, baseline: dict) -> list[str]:
             and _bounded(value, 0, .9 * reference)):
       failures.append(f"{name}/heldout_style_improvement")
   return failures
+
+
+def a1_convergence_failures(velocity: list[dict], gait: list[dict],
+                            noisy: dict, baseline: dict) -> list[str]:
+  """Bind all suites to three spaced checkpoints and an independent model_0."""
+  failures = []
+  if len(velocity) != 3 or len(gait) != 3:
+    return ["require_three_velocity_and_gait_checkpoints"]
+  for key, expected in (("iteration", 0), ("robot_kind", "a1"), ("seconds", 20),
+                        ("repeats", 8), ("seed", 42)):
+    if baseline.get(key) != expected:
+      failures.append(f"baseline/{key}")
+  failures.extend(f"baseline/{key}" for key in _backend_failures(baseline))
+  velocity = sorted(velocity, key=lambda r: r.get("iteration", -1))
+  iterations = [r.get("iteration", -1) for r in velocity]
+  if iterations[0] <= 0 or any(b - a != 1000 for a, b in zip(iterations, iterations[1:])):
+    failures.append("checkpoint_spacing")
+  by_path = {r.get("checkpoint"): r for r in gait}
+  paths = {r.get("checkpoint") for r in velocity}
+  if len(paths) != 3 or len(by_path) != 3 or baseline.get("checkpoint") in paths:
+    failures.append("distinct_checkpoints")
+  for report in velocity:
+    prefix = str(report.get("iteration"))
+    failures.extend(f"{prefix}/velocity/{f}" for f in a1_velocity_failures(report))
+    paired = by_path.get(report.get("checkpoint"), {})
+    if paired.get("iteration") != report.get("iteration"):
+      failures.append(f"{prefix}/gait_checkpoint")
+    failures.extend(f"{prefix}/gait/{f}" for f in a1_gait_failures(paired, baseline))
+  if (noisy.get("checkpoint") != velocity[-1].get("checkpoint")
+      or noisy.get("iteration") != iterations[-1]):
+    failures.append("noisy/final_checkpoint")
+  failures.extend(f"noisy/{f}" for f in a1_velocity_failures(noisy, noisy=True))
+  return failures

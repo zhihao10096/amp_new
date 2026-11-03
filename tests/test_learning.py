@@ -85,6 +85,44 @@ def test_imagination_backpropagates_to_actor_with_frozen_dynamics_and_critic():
   torch.testing.assert_close(targets[:, 1], data["rewards"][:, 1])
 
 
+def test_critic_warmup_updates_critic_without_retaining_actor_rollout_graph():
+  from go2_supermimic.amp import AMPDiscriminator
+
+  torch.manual_seed(71)
+  trainer = Trainer.__new__(Trainer)
+  trainer.cfg = TrainCfg(imag_batch=4, horizon=3, critic_epochs=1, critic_minibatches=1)
+  trainer.device = "cpu"
+  trainer.wm = WorldModel((16,))
+  trainer.wm.out_norm.var.fill_(1e-4)
+  trainer.actor = Actor(v.FRAME_DIM * 2, (16,))
+  trainer.critic = Critic(CRITIC_DIM, (16,))
+  trainer.amp = AMPDiscriminator((16,))
+  trainer.opt_actor = torch.optim.Adam(trainer.actor.parameters(), lr=1e-3)
+  trainer.opt_critic = torch.optim.Adam(trainer.critic.parameters(), lr=1e-3)
+  trainer.imag = Imagination(ImagineCfg(horizon=3),
+                             v.VelocityTaskCfg(history=2, observation_noise=False),
+                             consts(), trainer.amp)
+  trainer.imag.amp_weight.fill_(.5)
+  seed = {"s": standing(4), "a_prev": torch.zeros(4, 12),
+          "obs": torch.randn(4, v.FRAME_DIM * 2), "commands": torch.ones(4, 3),
+          "command_time": torch.full((4,), 10.), "gait": torch.zeros(4, v.GAIT_DIM)}
+  trainer.buf = SimpleNamespace(sample_states=lambda _: seed)
+  grad_modes = []
+  trainer.actor.register_forward_pre_hook(lambda *_: grad_modes.append(torch.is_grad_enabled()))
+  initial_actor = [p.detach().clone() for p in trainer.actor.parameters()]
+  initial_critic = [p.detach().clone() for p in trainer.critic.parameters()]
+  stats = trainer.improve_policy(update_actor=False)
+  assert grad_modes == [False] * 3 and stats["actor_grad_norm"] == 0
+  assert all(torch.equal(a, b) for a, b in zip(initial_actor, trainer.actor.parameters()))
+  assert any(not torch.equal(a, b) for a, b in zip(initial_critic, trainer.critic.parameters()))
+  assert not trainer.opt_actor.state
+  grad_modes.clear()
+  stats = trainer.improve_policy(update_actor=True)
+  assert grad_modes == [True] * 3 and stats["actor_grad_norm"] > 0
+  assert any(not torch.equal(a, b) for a, b in zip(initial_actor, trainer.actor.parameters()))
+  assert all(p.grad is None for model in (trainer.wm, trainer.amp) for p in model.parameters())
+
+
 def test_compiled_imagination_preserves_returns_and_actor_gradients(monkeypatch):
   """AOTAutograd must preserve credit through state, contacts and history."""
   compile_step = torch.compile
