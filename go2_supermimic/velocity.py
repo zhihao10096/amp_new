@@ -116,6 +116,10 @@ class RobotConsts:
   velocity: torch.Tensor
 
 
+def amp_reward_coefficients(cfg: VelocityTaskCfg, weight: float) -> tuple[float, float]:
+  return 1., weight
+
+
 @lru_cache(maxsize=32)
 def _command_bounds(device: str, ranges: tuple) -> torch.Tensor:
   # Imagination invokes this each step. Recreating a CUDA tensor from Python

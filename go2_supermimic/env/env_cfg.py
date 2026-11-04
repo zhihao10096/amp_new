@@ -16,6 +16,7 @@ from isaaclab_assets import UNITREE_A1_CFG, UNITREE_GO2_CFG
 
 from go2_supermimic.amp import DEFAULT_A1_MOTIONS
 from go2_supermimic.env import mdp
+from go2_supermimic.task_api import task_api
 from go2_supermimic.velocity import CommandCfg, VelocityTaskCfg
 
 
@@ -120,14 +121,16 @@ class Go2VelocityEnvCfg(ManagerBasedRLEnvCfg):
     self.actions.joint_position.raw_clip = self.task.action_clip
     self.observations.policy.history_length = self.task.history
     self.observations.policy.enable_corruption = self.task.observation_noise
+    task_weight, style_weight = (task_api(self.robot_kind).amp_reward_coefficients(
+      self.task, self.amp_weight) if self.amp_enabled else (1., 0.))
     self.rewards = {
       item.name: RewardTermCfg(
-        func=mdp.reward_component, weight=getattr(self.task.rewards, item.name),
+        func=mdp.reward_component, weight=task_weight * getattr(self.task.rewards, item.name),
         params={"name": item.name})
       for item in fields(self.task.rewards)
     }
     if self.amp_enabled:
-      self.rewards["amp_style"] = RewardTermCfg(func=mdp.amp_style_reward, weight=self.amp_weight)
+      self.rewards["amp_style"] = RewardTermCfg(func=mdp.amp_style_reward, weight=style_weight)
 
 
 @configclass

@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pickle
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import torch
@@ -45,6 +45,13 @@ FRAME_DIM = sum(dim for _, dim in OBS_TERMS)
 MANIFEST = Path(__file__).resolve().parents[1] / "assets/motions/g1/manifest.json"
 DEFAULT_G1_MOTIONS = str(MANIFEST.parent)
 ACTUATOR_MODEL = "g1_implicit_pd_v1"
+REWARD_PROFILE = "g1_legged_lab_walk_v1"
+LEG_JOINT_IDS = tuple(i for pair in LEG_INDICES for i in pair)
+HIP_KNEE_IDS = tuple(i for pair in LEG_INDICES[:4] for i in pair)
+ANKLE_IDS = tuple(i for pair in LEG_INDICES[4:] for i in pair)
+HIP_DEVIATION_IDS = (3, 4, 6, 7)
+WAIST_IDS = (2, 5, 8)
+ARM_IDS = tuple(i for i in range(NUM_JOINTS) if i not in LEG_JOINT_IDS + WAIST_IDS)
 CommandCfg, VelocityTaskCfg, RobotConsts = quad.CommandCfg, quad.VelocityTaskCfg, quad.RobotConsts
 sample_commands, advance_commands = quad.sample_commands, quad.advance_commands
 terminated, termination_probability = quad.terminated, quad.termination_probability
@@ -59,6 +66,46 @@ class RewardWeights(quad.RewardWeights):
 REWARD_NAMES = tuple(RewardWeights.__dataclass_fields__)
 
 
+@dataclass
+class LeggedLabRewardWeights(RewardWeights):
+  track_linear_velocity: float = 1.
+  track_yaw_rate: float = 2.
+  vertical_velocity: float = -.2
+  roll_pitch_rate: float = -.05
+  orientation: float = -1.
+  base_height: float = 0.
+  joint_deviation: float = 0.
+  action_rate: float = -.005
+  joint_torque: float = -2e-6
+  joint_velocity: float = 0.
+  energy: float = 0.
+  joint_acceleration: float = -1.25e-7
+  joint_limits: float = -1.
+  feet_air_time: float = .75
+  air_time_variance: float = 0.
+  feet_slide: float = -.1
+  undesired_contacts: float = -1.
+  feet_clearance: float = 0.
+  feet_contact_without_command: float = 0.
+  gait_duration: float = 0.
+  diagonal_gait: float = 0.
+  terminated: float = -200.
+  flight: float = 0.
+  feet_distance: float = 0.
+  joint_deviation_hip: float = -.1
+  joint_deviation_arms: float = -.05
+  joint_deviation_waist: float = -.1
+
+
+def amp_reward_coefficients(cfg: VelocityTaskCfg, weight: float) -> tuple[float, float]:
+  if cfg.reward_profile != REWARD_PROFILE:
+    return 1., weight
+  if not 0 <= weight <= 1:
+    raise ValueError("legged_lab AMP style mixing fraction must be in [0, 1]")
+  # legged_lab uses task_style_lerp=.5 and style_reward_scale=2.
+  return 1 - weight, 2 * weight
+
+
 def require_implicit_pd(checkpoint: dict) -> None:
   """Never import a world model learned with the historical G1 DC actuator."""
   if checkpoint.get("actuator_model") != ACTUATOR_MODEL:
@@ -69,7 +116,7 @@ def require_implicit_pd(checkpoint: dict) -> None:
       "or evaluated as implicit PD.")
 
 
-def walk_task() -> VelocityTaskCfg:
+def legacy_walk_task() -> VelocityTaskCfg:
   return VelocityTaskCfg(
     reward_profile="g1_walk", action_scale=.25, nominal_height=.78, minimum_height=.5,
     swing_height=.12, target_air_time=.25, target_stance_time=.35,
@@ -82,6 +129,12 @@ def walk_task() -> VelocityTaskCfg:
       air_time_variance=0., feet_slide=-.1, undesired_contacts=-1.,
       feet_clearance=.15, feet_contact_without_command=.5, gait_duration=-.5,
       diagonal_gait=0., terminated=-50.))
+
+
+def walk_task() -> VelocityTaskCfg:
+  """The 16 upstream task terms, restricted to this project's flat walk range."""
+  return replace(legacy_walk_task(), reward_profile=REWARD_PROFILE,
+                 rewards=LeggedLabRewardWeights())
 
 
 def obs_frame(s: torch.Tensor, action: torch.Tensor, commands: torch.Tensor,
@@ -129,6 +182,86 @@ def motor_torque(s: torch.Tensor, action: torch.Tensor, c: RobotConsts,
 
 def reward(s0, s1, action, previous_action, commands, c: RobotConsts,
            cfg: VelocityTaskCfg, dt: float, done: torch.Tensor, gait=None, parameters=None):
+  if cfg.reward_profile == REWARD_PROFILE:
+    return _legged_lab_reward(
+      s0, s1, action, previous_action, commands, c, cfg, dt, done, gait, parameters)
+  return _legacy_reward(
+    s0, s1, action, previous_action, commands, c, cfg, dt, done, gait, parameters)
+
+
+def yaw_frame_velocity(s: torch.Tensor) -> torch.Tensor:
+  """Recover yaw-frame velocity from body velocity and projected gravity.
+
+  R_y(pitch) R_x(roll) removes tilt without requiring the yaw discarded by our
+  invariant state. The epsilon only regularizes invalid imagined gravity near
+  the Euler singularity; native unit gravity below the fall limit is exact.
+  """
+  gravity = s[:, GRAV]
+  gravity = gravity / gravity.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+  gx, gy, gz = gravity.unbind(-1)
+  cp = (gy.square() + gz.square() + 1e-12).sqrt()
+  sr, cr = -gy / cp, -gz / cp
+  vx, vy, vz = s[:, V_B].unbind(-1)
+  return torch.stack((cp * vx + gx * sr * vy + gx * cr * vz,
+                      cr * vy - sr * vz,
+                      -(gravity * s[:, V_B]).sum(-1)), -1)
+
+
+def _legged_lab_reward(s0, s1, action, previous_action, commands, c: RobotConsts,
+                       cfg: VelocityTaskCfg, dt: float, done: torch.Tensor,
+                       gait=None, parameters=None):
+  """Upstream formulas with explicit control-step torque/acceleration proxies."""
+  q, qd = s1[:, Q] + c.default_q, s1[:, QD]
+  torque = motor_torque(s1, action, c, cfg)
+  still = commands[:, :2].norm(dim=-1) < .06
+  moving = commands[:, :2].norm(dim=-1) > .1
+  limits = ((c.soft_limits[..., 0] - q).clamp(min=0)
+            + (q - c.soft_limits[..., 1]).clamp(min=0))
+  gravity = s1[:, GRAV]
+  gravity = gravity / gravity.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+  world_wz = -(gravity * s1[:, W_B]).sum(-1)
+  terms = {
+    "track_linear_velocity": torch.exp(
+      -(yaw_frame_velocity(s1)[:, :2] - commands[:, :2]).square().sum(-1)
+      / cfg.tracking_variance),
+    "track_yaw_rate": torch.exp(-(world_wz - commands[:, 2]).square()
+                               / cfg.tracking_variance),
+    "orientation": s1[:, GRAV][:, :2].square().sum(-1),
+    "vertical_velocity": s1[:, 6].square(),
+    "roll_pitch_rate": s1[:, W_B][:, :2].square().sum(-1),
+    "joint_torque": torque[:, LEG_JOINT_IDS].square().sum(-1),
+    "joint_acceleration": ((qd - s0[:, QD])[:, HIP_KNEE_IDS] / dt).square().sum(-1),
+    "action_rate": (action - previous_action).square().sum(-1),
+    "joint_limits": limits[:, ANKLE_IDS].sum(-1),
+    "joint_deviation_hip": s1[:, Q][:, HIP_DEVIATION_IDS].abs().sum(-1) * still,
+    "joint_deviation_arms": s1[:, Q][:, ARM_IDS].abs().sum(-1) * still,
+    "joint_deviation_waist": s1[:, Q][:, WAIST_IDS].abs().sum(-1) * still,
+    "undesired_contacts": s1[:, UNDESIRED_CONTACT].squeeze(-1).clamp(min=0),
+    "terminated": done.float(),
+  }
+  if gait is not None:
+    following, _ = advance_gait(gait, s0[:, CONTACT], s1[:, CONTACT], dt)
+    contact = s1[:, CONTACT].clamp(0, 1)
+    single = contact[:, 0] * (1 - contact[:, 1]) + contact[:, 1] * (1 - contact[:, 0])
+    velocity = s1[:, FOOT_VEL].reshape(-1, 2, 3)
+    horizontal = velocity - (velocity * gravity[:, None]).sum(-1, keepdim=True) * gravity[:, None]
+    terms.update({
+      "feet_air_time": (following[:, AIR] + following[:, STANCE]).min(-1).values.clamp(max=.4)
+                       * single * moving,
+      "feet_slide": (horizontal.norm(dim=-1) * contact).sum(-1),
+    })
+  names = tuple(cfg.rewards.__dataclass_fields__)
+  for name in names:
+    if name not in terms:
+      terms[name] = s1.new_zeros(s1.shape[0])
+  weights = (s1.new_tensor([getattr(cfg.rewards, name) for name in names])
+             if parameters is None else parameters[:-1])
+  return (torch.stack([terms[name] for name in names], -1) * weights).sum(-1) * dt, terms
+
+
+def _legacy_reward(s0, s1, action, previous_action, commands, c: RobotConsts,
+                   cfg: VelocityTaskCfg, dt: float, done: torch.Tensor,
+                   gait=None, parameters=None):
   q, qd = s1[:, Q] + c.default_q, s1[:, QD]
   torque = motor_torque(s1, action, c, cfg)
   moving = commands.norm(dim=-1) > .1
@@ -237,9 +370,11 @@ def frame_features(f: torch.Tensor,
 
 class AMPDiscriminator(PairDiscriminator):
   def __init__(self, hidden: tuple[int, ...] = (512, 256),
-               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA, num_frames: int = 2):
+               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA, num_frames: int = 2,
+               command_gate: bool = True):
     self.feature_schema = feature_schema
-    super().__init__(hidden, feature_dim=amp_feature_dim(feature_schema), num_frames=num_frames)
+    super().__init__(hidden, feature_dim=amp_feature_dim(feature_schema),
+                     num_frames=num_frames, command_gate=command_gate)
 
   def features(self, state: torch.Tensor, default_q: torch.Tensor) -> torch.Tensor:
     return state_features(state, default_q, self.feature_schema)

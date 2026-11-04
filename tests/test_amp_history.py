@@ -136,8 +136,8 @@ def test_four_frame_imagination_compile_preserves_amp_only_actor_gradient(
   eager = Imagination(ImagineCfg(horizon=4), task, consts, disc)
   compiled = Imagination(ImagineCfg(horizon=4, compile=True), task, consts, disc)
   for weight in (0., .5):
-    eager.amp_weight.fill_(weight)
-    compiled.amp_weight.fill_(weight)
+    eager.set_amp_weight(weight)
+    compiled.set_amp_weight(weight)
     expected, data = eager.rollout(wm, actor, critic, seed)
     actual, actual_data = compiled.rollout(wm, actor, critic, seed)
     torch.testing.assert_close(actual, expected)

@@ -153,11 +153,12 @@ class AMPDiscriminator(nn.Module):
   features = staticmethod(state_features)
 
   def __init__(self, hidden: tuple[int, ...] = (512, 256), feature_dim: int = AMP_DIM,
-               num_frames: int = 2):
+               num_frames: int = 2, command_gate: bool = True):
     super().__init__()
     if num_frames not in (2, 4):
       raise ValueError("AMP num_frames must be 2 or 4")
     self.num_frames = num_frames
+    self.command_gate = command_gate
     self.norm = RunningNorm(feature_dim)
     self.net = mlp(num_frames * feature_dim, hidden, 1, act=nn.LeakyReLU)
 
@@ -181,7 +182,7 @@ class AMPDiscriminator(nn.Module):
       states = torch.cat((history, before[:, None], after[:, None]), 1)
       score = self.sequence_score(self.features(states, default_q))
     style = (1 - .25 * (score - 1).square()).clamp(min=0)
-    return style * (commands.norm(dim=-1) > .1)
+    return style * (commands.norm(dim=-1) > .1) if self.command_gate else style
 
   def loss(self, expert: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
            policy: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,

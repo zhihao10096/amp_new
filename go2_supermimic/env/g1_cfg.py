@@ -72,6 +72,11 @@ class G1AmpEnvCfg(Go2VelocityEnvCfg):
   amp_feature_schema = DEFAULT_AMP_FEATURE_SCHEMA
   task = walk_task()
 
+  def configure_task(self):
+    super().configure_task()
+    if self.task.reward_profile == "g1_legged_lab_walk_v1":
+      self.undesired_contact_patterns = (".*_elbow_link", ".*_wrist_.*")
+
 
 @configclass
 class G1VelocityEnvCfg(G1AmpEnvCfg):

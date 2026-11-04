@@ -13,6 +13,7 @@ parser.add_argument("--output", default="logs/amp_g1/integration.json")
 parser.add_argument("--compile", action="store_true")
 parser.add_argument("--amp-feature-schema", default="g1_amp_61_v1")
 parser.add_argument("--amp-num-frames", type=int, default=2)
+parser.add_argument("--legacy-rewards", action="store_true")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 launcher = AppLauncher(args)
@@ -33,6 +34,8 @@ try:
 
   torch.set_float32_matmul_precision("highest")
   cfg = G1AmpEnvCfg()
+  if args.legacy_rewards:
+    cfg.task = g1.legacy_walk_task()
   cfg.scene.num_envs = 32
   cfg.sim.device = args.device
   cfg.task.observation_noise = False
@@ -46,6 +49,9 @@ try:
   assert type(env)._reset_idx is ManagerBasedRLEnv._reset_idx
   assert env.robot.joint_names == env.amp_motion.joint_names
   assert env.robot.num_joints == 29
+  if cfg.task.reward_profile == g1.REWARD_PROFILE:
+    penalized = [env.contact_sensor.body_names[i] for i in env.undesired_sensor_ids]
+    assert len(penalized) == 8 and all("elbow" in name or "wrist" in name for name in penalized)
   assert all(type(motor) is ImplicitActuator for motor in env.robot.actuators.values())
   # Explicit DC drives write zero Kp/Kd into PhysX. These must be real PD drives.
   stiffness = env.robot.root_physx_view.get_dof_stiffnesses().to(env.device)
@@ -77,7 +83,8 @@ try:
     motor_estimate_error = max(motor_estimate_error, error)
     torch.testing.assert_close(expected, estimate, atol=2e-5, rtol=2e-5)
   disc = g1.AMPDiscriminator(
-    (32, 16), args.amp_feature_schema, args.amp_num_frames).to(env.device).requires_grad_(False)
+    (32, 16), args.amp_feature_schema, args.amp_num_frames,
+    command_gate=cfg.task.reward_profile != g1.REWARD_PROFILE).to(env.device).requires_grad_(False)
   disc.norm.update(torch.cat(env.amp_motion.sample_pairs(1024)))
   env.amp_discriminator = disc
   obs, _ = env.reset(seed=42)
@@ -103,6 +110,7 @@ try:
   obs, _ = env.reset()
   resets = falls = resamples = timeouts = 0
   real_td_max_error = 0.
+  native_torque_proxy_difference = native_acceleration_proxy_difference = 0.
   real_anchor = Imagination(ImagineCfg(), cfg.task, env.consts, disc)
   prior_done = torch.ones(32, dtype=torch.bool, device=env.device)
 
@@ -111,8 +119,13 @@ try:
 
   for step in range(100):
     weight = (0., .5, .17)[step % 3]
+    task_weight, style_weight = g1.amp_reward_coefficients(cfg.task, weight)
+    for name in cfg.task.rewards.__dataclass_fields__:
+      task_term = env.reward_manager.get_term_cfg(name)
+      task_term.weight = task_weight * getattr(cfg.task.rewards, name)
+      env.reward_manager.set_term_cfg(name, task_term)
     term_cfg = env.reward_manager.get_term_cfg("amp_style")
-    term_cfg.weight = weight
+    term_cfg.weight = style_weight
     env.reward_manager.set_term_cfg("amp_style", term_cfg)
     if step == 10:
       root = env.robot.data.root_state_w[:1].clone()
@@ -127,9 +140,10 @@ try:
                         cfg.task, env.step_dt, term, gait)
     physical_history = extras["transition"].get("amp_history")
     style = disc.reward(before, state, env.consts.default_q, commands, physical_history)
-    torch.testing.assert_close(actual, base + weight * env.step_dt * style, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(
+      actual, task_weight * base + style_weight * env.step_dt * style, atol=1e-5, rtol=1e-5)
     torch.testing.assert_close(extras["amp_style"], style)
-    real_anchor.amp_weight.fill_(weight)
+    real_anchor.set_amp_weight(weight)
     batch = {"s": before, "next_s": state, "action": action, "a_prev": previous,
              "commands": commands, "command_time": remaining, "gait": gait,
              "done": term | trunc}
@@ -149,6 +163,14 @@ try:
     real_td_max_error = max(real_td_max_error, (targets - expected_target).abs().max().item())
     torch.testing.assert_close(real_inputs[:, :83], before[keep])
     done = term | trunc
+    if cfg.task.reward_profile == g1.REWARD_PROFILE and (~done).any():
+      valid = ~done
+      estimated_torque = g1.motor_torque(state, action, env.consts, cfg.task)
+      native_torque_proxy_difference = max(native_torque_proxy_difference, (
+        (estimated_torque[valid] - env.robot.data.applied_torque[valid]).abs().max().item()))
+      estimated_acceleration = (state[:, g1.QD] - before[:, g1.QD]) / env.step_dt
+      native_acceleration_proxy_difference = max(native_acceleration_proxy_difference, (
+        (estimated_acceleration[valid] - env.robot.data.joint_acc[valid]).abs().max().item()))
     prior_done = done.clone()
     frame = g1.obs_frame(robot_state(env), env.actions, env.commands)
     expected = g1.push_history(history, frame, cfg.task.history)
@@ -180,8 +202,8 @@ try:
     seed["amp_history"] = env.amp_history_for_state(seed["s"])
   eager = Imagination(ImagineCfg(horizon=4), task, env.consts, disc)
   compiled = Imagination(ImagineCfg(horizon=4, compile=args.compile), task, env.consts, disc)
-  eager.amp_weight.fill_(.5)
-  compiled.amp_weight.fill_(.5)
+  eager.set_amp_weight(.5)
+  compiled.set_amp_weight(.5)
   returned, gradients = [], []
   for imagine in (eager, compiled):
     actor.zero_grad(set_to_none=True)
@@ -196,6 +218,12 @@ try:
   assert torch.isfinite(gradients[0]).all() and gradients[0].abs().sum() > 0
   result = {"passed": True, "robot_kind": "g1", "resets": resets, "falls": falls,
             "actuator_model": g1.ACTUATOR_MODEL,
+            "reward_profile": cfg.task.reward_profile,
+            "amp_command_gate": disc.command_gate,
+            "final_task_style_coefficients": g1.amp_reward_coefficients(cfg.task, .5),
+            "native_last_effort_vs_endpoint_proxy_max_nm": native_torque_proxy_difference,
+            "native_joint_acc_vs_control_difference_max_rad_s2": native_acceleration_proxy_difference,
+            "proxy_differences_are_diagnostic_not_exact_physics": True,
             "implicit_effort_estimate_max_error": motor_estimate_error,
             "physx_drive_gains_verified": True,
             "amp_feature_schema": args.amp_feature_schema,

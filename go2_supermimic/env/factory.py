@@ -46,7 +46,8 @@ def attach_evaluation_amp(env, checkpoint):
     disc = amp_api(env.robot_kind).AMPDiscriminator(
       tuple(checkpoint["cfg"]["amp_hidden"]),
       checkpoint["cfg"].get("amp_feature_schema", "g1_amp_61_v1"),
-      checkpoint["cfg"].get("amp_num_frames", 2)).to(env.device)
+      checkpoint["cfg"].get("amp_num_frames", 2),
+      command_gate=env.cfg.task.reward_profile != "g1_legged_lab_walk_v1").to(env.device)
   else:
     disc = amp_api(env.robot_kind).AMPDiscriminator(
       tuple(checkpoint["cfg"]["amp_hidden"])).to(env.device)

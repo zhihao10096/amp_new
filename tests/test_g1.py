@@ -105,7 +105,7 @@ def test_g1_replay_imagination_and_task_roundtrip():
           torch.ones(8, 3) * .2, torch.full((8,), 10.), torch.zeros(8, dtype=torch.bool),
           torch.zeros(8, 8))
   imag = Imagination(ImagineCfg(horizon=3), task, c, g1.AMPDiscriminator((16,)).requires_grad_(False))
-  imag.amp_weight.fill_(.5)
+  imag.set_amp_weight(.5)
   objective, data = imag.rollout(wm, actor, critic, buf.sample_states(8))
   (-objective.mean()).backward()
   assert data["critic_in"].shape == (8, 4, 124)

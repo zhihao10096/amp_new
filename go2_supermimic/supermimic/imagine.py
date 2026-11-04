@@ -24,18 +24,26 @@ class Imagination:
   def __init__(self, cfg: ImagineCfg, task: v.VelocityTaskCfg, consts: v.RobotConsts,
                amp: AMPDiscriminator | None = None):
     self.cfg, self.task, self.consts = cfg, task, consts
-    self.api = task_api("g1" if task.reward_profile == "g1_walk" else "go2")
+    self.api = task_api("g1" if task.reward_profile.startswith("g1_") else "go2")
     self.critic_dim = self.api.STATE_DIM + self.api.GAIT_DIM + self.api.NUM_JOINTS + 4
     self.amp = amp
     self.amp_weight = consts.default_q.new_zeros(())
-    self.reward_parameters = consts.default_q.new_empty(len(self.api.REWARD_NAMES) + 1)
+    self.task_weight = consts.default_q.new_ones(())
+    self.reward_names = tuple(task.rewards.__dataclass_fields__)
+    self.reward_parameters = consts.default_q.new_empty(len(self.reward_names) + 1)
     self.update_reward_parameters()
     self._step_fn = torch.compile(self._step, dynamic=False) if cfg.compile else self._step
 
   def update_reward_parameters(self):
-    values = [getattr(self.task.rewards, name) for name in self.api.REWARD_NAMES]
+    values = [getattr(self.task.rewards, name) for name in self.reward_names]
     self.reward_parameters.copy_(
       self.reward_parameters.new_tensor(values + [self.task.joint_deviation_gait_fraction]))
+
+  def set_amp_weight(self, weight: float) -> tuple[float, float]:
+    task_weight, style_weight = self.api.amp_reward_coefficients(self.task, weight)
+    self.task_weight.fill_(task_weight)
+    self.amp_weight.fill_(style_weight)
+    return task_weight, style_weight
 
   @staticmethod
   def critic_input(s, previous_action, commands, remaining, gait):
@@ -51,6 +59,7 @@ class Imagination:
     reward, _ = api.reward(s, next_s, action, previous, commands,
                          self.consts, task, cfg.dt, death, gait,
                          self.reward_parameters if cfg.compile else None)
+    reward = self.task_weight * reward
     if self.amp is not None:
       if self.amp.num_frames == 2:
         style = self.amp.reward(s, next_s, self.consts.default_q, commands)
@@ -125,6 +134,7 @@ class Imagination:
     reward, _ = api.reward(
       before, after, batch["action"], batch["a_prev"], batch["commands"],
       self.consts, task, cfg.dt, death, batch["gait"])
+    reward = self.task_weight * reward
     if self.amp is not None:
       if getattr(self.amp, "num_frames", 2) == 2:
         style = self.amp.reward(before, after, self.consts.default_q, batch["commands"])

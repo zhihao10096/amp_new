@@ -298,3 +298,51 @@
 - 2026-11-04T11:37:56.012769+08:00 隐式PD验证全部完成，driver2858666退出，pipeline/audit passed；原生力矩估算误差0，四网20→25更新actor16→21/critic36→46/WM20→25/D3→4；A1真实GPU回归及最终三点审计均通过，旧DC审计新增执行器拒绝通过。model25七指令829摔，仅验证评估接口，不是收敛。无本项目GPU作业，保留其他项目约5895MiB使用。准备更新文档并提交控制修复。
 
 - 2026-11-04T11:40:18+08:00 控制修复及四方上游对照归档：全部GPU/CPU/模型恢复/A1回归和旧DC类型拒绝已验证，STATUS重写为新PD恢复入口，旧状态快照docs/history/STATUS_2026-11-04_before_implicit_pd.md。两份思路doc/G1_IMPLICIT_PD_RESTORE_2026-11-04.md及G1_AMP_UPSTREAM_AUDIT_2026-11-04.md记录实施/证据/限制；最终G1执行器审计新增类型检查。准备仅提交本轮控制及文档，保留无关改动，不启动长训；下一步上游奖励/AMP公式oracle。
+
+- 2026-11-04T11:41:43.548389+08:00 本轮控制及上游对照任务提交f32755e（16文件；未提交reference/日志/模型及无关改动）。CPU75、原生GPU、编译/同控制热启动/四网保存恢复/A1回归及最终审计回归均通过；无新收敛训练，G1/X1总目标未完成。下一步按doc/G1_AMP_UPSTREAM_AUDIT_2026-11-04.md做奖励/AMP公式oracle及配置对齐；不重启完成验证，不导入旧DC世界模型。
+
+- 2026-11-04T11:42:34.721994+08:00 本次交付完成：f32755e控制修复及两份doc已同步本地主机doc/，SHA256一致；680×230中央弹窗已实际显示并记录本地artifacts/g1_implicit_pd_completion_notice.json。STATUS包含准确HEAD和新PD恢复入口，无本项目训练进程；G1尚未收敛，下一阶段上游奖励/AMP公式对齐。
+
+- 2026-11-04T11:50:47+08:00 继续目标：核实f32755e及无本项目进程，前轮为有实现/证据进展。本轮按固定上游16项奖励和AMP混合对齐，新增g1_legged_lab_walk_v1、保留legacy，actor/WM结构不改；已定位额外终止差异：上游height=.2且无60°倾角终止，依赖torso/pelvis接触。先将该项列为后续独立接口，不把奖励oracle宣称完整上游MDP复现；无新长训。思路doc/G1_LEGGED_LAB_REWARD_ALIGNMENT_2026-11-04.md。
+
+- 2026-11-04T11:59:18.721074+08:00 新G1奖励CPU82通过。上游原函数oracle首跑因undesired_contacts整数计数与浮点状态dtype检查停下，尚无数值不符证据；现保留原日志并在oracle记录原始dtype、转为对应状态dtype后重查，生产公式不改。新训练未启动。
+
+- 2026-11-04T12:00:42.291681+08:00 上游16项奖励oracle passed，512样本/float64原方法最大项误差9.76e-13，task误差1.95e-14；9组dt/混合组合通过。CPU82通过，真实GPU验证driver PID2883115已启动，状态logs/amp_g1/upstream_reward_validation.pipeline.json；将覆盖新61维四帧及legacy、四网保存恢复/A1回归，非收敛训练。
+
+- 2026-11-04T12:00:43.509499+08:00 上游奖励验证启动upstream_reward_integration，driver PID2883115、child PID2883231；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:01:31.994041+08:00 上游奖励验证结束upstream_reward_integration，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_integration.log。
+
+- 2026-11-04T12:01:31.999277+08:00 上游奖励验证启动upstream_reward_legacy_integration，driver PID2883115、child PID2884393；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:02:08.351162+08:00 上游奖励验证结束upstream_reward_legacy_integration，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_legacy_integration.log。
+
+- 2026-11-04T12:02:08.352958+08:00 上游奖励验证启动upstream_reward_velocity_smoke，driver PID2883115、child PID2885161；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:02:47.730651+08:00 上游奖励验证结束upstream_reward_velocity_smoke，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_velocity_smoke.log。
+
+- 2026-11-04T12:02:47.736142+08:00 上游奖励验证启动upstream_reward_smoke_initial，driver PID2883115、child PID2885969；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:03:12.786376+08:00 新上游奖励原生GPU/编译已passed：8个手臂接触体映射、真实/想象混合与真实TD/reset/终止/命令/4帧均通过；原生PD末子步估算与端点代理、原生加速度与控制周期差分存在预期差异，已量化于upstream_reward_integration.json，不能宣称原生MDP完全等价。旧profile原生编译也passed；原driver继续四网短跑/恢复/A1与旧checkpoint回归，不启动新长训。
+
+- 2026-11-04T12:03:30.178002+08:00 上游奖励验证结束upstream_reward_smoke_initial，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_smoke_initial.log。
+
+- 2026-11-04T12:03:30.187934+08:00 上游奖励验证启动upstream_reward_smoke_resume，driver PID2883115、child PID2886721；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:03:51.400153+08:00 上游奖励验证结束upstream_reward_smoke_resume，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_smoke_resume.log。
+
+- 2026-11-04T12:03:51.407940+08:00 上游奖励验证启动upstream_reward_legacy_checkpoint_gait，driver PID2883115、child PID2887134；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:04:33.819643+08:00 上游奖励验证结束upstream_reward_legacy_checkpoint_gait，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_legacy_checkpoint_gait.log。
+
+- 2026-11-04T12:04:33.825163+08:00 上游奖励验证启动upstream_reward_a1_regression，driver PID2883115、child PID2887834；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:05:16.229500+08:00 上游奖励验证结束upstream_reward_a1_regression，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_a1_regression.log。
+
+- 2026-11-04T12:05:16.231357+08:00 上游奖励验证启动upstream_reward_smoke_gait，driver PID2883115、child PID2888712；命令/配置/日志见logs/amp_g1/upstream_reward_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:05:55.626008+08:00 上游奖励验证结束upstream_reward_smoke_gait，返回码0，预期拒绝=False，证据logs/amp_g1/upstream_reward_smoke_gait.log。
+
+- 2026-11-04T12:05:55.626945+08:00 上游16项奖励/AMP混合CPU82/oracle/原生GPU/想象编译梯度/同控制velocity→AMP热启动/四网20→25/旧profile及checkpoint/A1回归/七指令评估接口均完成。短跑不证明walk收敛。
+
+- 2026-11-04T12:07:53+08:00 恢复后核实原pipeline2883115已complete且所有子进程退出，未重复启动。上游16项奖励对齐CPU82/oracle512样本/真实GPU编译/四网20→25/旧profile及checkpoint/A1回归全部passed，source SHA256与受测源码一致。真实TD4.77e-7、编译返回3.58e-7/梯度1.46e-11；末子步力矩/加速度代理差异已量化，25轮829摔只属接口测试。保留隐式PD，IdealPD为备选，无新长训。STATUS重写、旧状态已快照、doc/G1_LEGGED_LAB_REWARD_ALIGNMENT_2026-11-04.md补齐结论，准备仅提交本项。

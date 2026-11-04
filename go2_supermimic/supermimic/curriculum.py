@@ -48,7 +48,7 @@ def curriculum_fraction(iteration: int, start: int, end: int) -> float:
 
 def training_task(target: VelocityTaskCfg, fraction: float) -> VelocityTaskCfg:
   """Return independent training weights without modifying checkpoint settings."""
-  if fraction == 1:
+  if fraction == 1 or target.reward_profile == "g1_legged_lab_walk_v1":
     return replace(target, rewards=replace(target.rewards))
   weights = {
     name: initial + fraction * (getattr(target.rewards, name) - initial)

@@ -20,7 +20,7 @@ def _params(task, fraction):
 
 
 def test_g1_joint_deviation_curriculum_matches_final_reward():
-  task = g1.walk_task()
+  task = g1.legacy_walk_task()
   state = torch.zeros(2, g1.STATE_DIM)
   state[:, g1.Z] = task.nominal_height
   state[:, g1.GRAV] = torch.tensor([[0., 0., 1.], [0., 0., 1.]])
@@ -40,7 +40,7 @@ def test_g1_joint_deviation_curriculum_matches_final_reward():
 def test_g1_curriculum_disables_extra_walk_terms_early():
   from go2_supermimic.supermimic.curriculum import training_task
 
-  target = g1.walk_task()
+  target = g1.legacy_walk_task()
   initial = training_task(target, 0.)
   final = training_task(target, 1.)
   assert initial.rewards.flight == 0.

@@ -153,7 +153,8 @@ def task_from_dict(data):
   data = dict(data)
   data["commands"] = v.CommandCfg(**data["commands"])
   weights = dict(data["rewards"])
-  if data.get("reward_profile") not in ("unitree_gait", "g1_walk"):
+  if data.get("reward_profile") not in (
+      "unitree_gait", "g1_walk", "g1_legged_lab_walk_v1"):
     for name in ("feet_clearance", "feet_contact_without_command", "gait_duration", "diagonal_gait"):
       weights[name] = 0.0
   if "reward_profile" not in data:
@@ -161,8 +162,10 @@ def task_from_dict(data):
     for name in ("joint_velocity", "energy", "feet_air_time", "air_time_variance",
                  "feet_slide", "undesired_contacts"):
       weights[name] = 0.0
-  api = task_api("g1" if data.get("reward_profile") == "g1_walk" else "go2")
-  data["rewards"] = api.RewardWeights(**weights)
+  api = task_api("g1" if data.get("reward_profile", "").startswith("g1_") else "go2")
+  reward_type = (api.LeggedLabRewardWeights if data.get("reward_profile")
+                 == "g1_legged_lab_walk_v1" else api.RewardWeights)
+  data["rewards"] = reward_type(**weights)
   return v.VelocityTaskCfg(**data)
 
 
@@ -184,7 +187,8 @@ class Trainer:
     if env.cfg.amp_enabled:
       if env.robot_kind == "g1":
         self.amp = amp_api(env.robot_kind).AMPDiscriminator(
-          cfg.amp_hidden, cfg.amp_feature_schema, cfg.amp_num_frames).to(self.device)
+          cfg.amp_hidden, cfg.amp_feature_schema, cfg.amp_num_frames,
+          command_gate=env.cfg.task.reward_profile != "g1_legged_lab_walk_v1").to(self.device)
       else:
         self.amp = amp_api(env.robot_kind).AMPDiscriminator(cfg.amp_hidden).to(self.device)
     else:
@@ -239,19 +243,19 @@ class Trainer:
       self.imag.update_reward_parameters()
     # Reward terms read the live task as well as their manager weights.
     self.env.training_task = task
+    task_weight = 1.
+    if getattr(self, "amp", None) is not None:
+      self.amp_fraction = min(1., iteration / cfg.amp_ramp_iterations)
+      task_weight, style_weight = self.imag.set_amp_weight(cfg.amp_weight * self.amp_fraction)
+      term = self.env.reward_manager.get_term_cfg("amp_style")
+      term.weight = style_weight
+      self.env.reward_manager.set_term_cfg("amp_style", term)
     for name in self.env.cfg.task.rewards.__dataclass_fields__:
       term = self.env.reward_manager.get_term_cfg(name)
-      weight = getattr(task.rewards, name)
+      weight = task_weight * getattr(task.rewards, name)
       if term.weight != weight:
         term.weight = weight
         self.env.reward_manager.set_term_cfg(name, term)
-    if getattr(self, "amp", None) is not None:
-      self.amp_fraction = min(1., iteration / cfg.amp_ramp_iterations)
-      weight = cfg.amp_weight * self.amp_fraction
-      self.imag.amp_weight.fill_(weight)
-      term = self.env.reward_manager.get_term_cfg("amp_style")
-      term.weight = weight
-      self.env.reward_manager.set_term_cfg("amp_style", term)
 
   def load(self, path):
     ckpt = load_checkpoint(path, self.device)
