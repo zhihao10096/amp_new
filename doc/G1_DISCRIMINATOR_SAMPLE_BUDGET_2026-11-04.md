@@ -17,3 +17,9 @@
 ## 依据
 
 机器报告 `logs/amp_g1/discriminator_sample_budget_audit.json` 保存参数、源码SHA256与实际3000更新数。上游固定f33a189：agents/rsl_rl_ppo_cfg.py、rsl_rl/amp/ppo_amp.py、circular_buffer.py；当前源码go2_supermimic/supermimic/train.py及正式run/config.json。
+
+## 后续AMP的单一预算候选（尚未GPU验证或运行）
+
+上游默认训练场景4096环境（amp_env_cfg.py:488），D batch=4096×24/4=24576，4次更新对应98304个新增物理转移，即D优化器步/新增转移=1/24576。当前18432环境可用 `amp_batch=24576、amp_updates=3、amp_update_interval=4`：3×24576/(4×18432)=1个policy序列/新增转移，优化器步/新增转移同为1/24576，同时匹配上游绝对batch。
+
+这是按已验证上游预算换算的单一候选，不是奖励权重调参；尚未做GPU容量验证，没有应用到当前无AMP速度续训。后续只有基础运动达到诊断入口后，先用该配置做完整D/actor更新容量检查，再决定匹配AMP对照。不同环境数导致每环境收集周期、优化交错和128/24步replay新鲜度仍不同，不声称整个训练过程等价。若显存不够，应优先调整D计算的分块/累积，而非悄悄改样本预算。
