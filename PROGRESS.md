@@ -138,3 +138,29 @@
 - 70维足端特征验证全部通过：CPU61、参考训练段几何/梯度、原生接口/终止/命令/reset、编译返回/actor梯度、四网四优化器20→25/CLI schema恢复、61/64维旧模型metadata与D加载、A1回归；证据logs/amp_g1/feet70_r2_validation.audit.json。短跑不算收敛；下一步先提交实现，再启动同源1000轮诊断。
 
 - 2026-11-04T09:47:30+08:00 关键验证完成：70维CPU61、独立CUDA fullgraph、完整原生/想象编译、四网四优化器20→25及CLI自动schema恢复、61/64旧metadata/D加载、A1 GPU回归全部通过，feet70_r2_validation.audit.json。FK常量广播编译问题已修复；短跑不证明收敛。准备提交可选70维实现后，从同9000模型/与64维同配置做1000轮诊断。
+
+- 2026-11-04T09:48:04 70维可选足端特征实现提交e835835。同源1000轮诊断driver2802496启动，18432env及所有学习批次/AMP/探索参数与64维一致，仅schema/run_name变更；训练/评估由同一pipeline顺序执行，配置/命令/模型/峰值写g1_amp_warm9000_feet70_diag.pipeline.json。未降低G1正式标准，X1未开始。
+
+- 70维同源诊断启动g1_amp_warm9000_feet70_diag，driver PID2802496、child PID2802600；命令/配置/日志见logs/amp_g1/g1_amp_warm9000_feet70_diag.pipeline.json，仅单变量诊断，不是正式成功来源，勿重复启动。
+
+- 用户新增完成通知规则：完成工作后在本地主机屏幕中央弹窗；本地DISPLAY=:0且tkinter/zenity可用，完成时执行本地通知，不改变当前训练。
+
+- 70维1000轮诊断model_0已及时审计：actor/WM逐张量等于9000来源，actor/critic/WM逐张量等于64维model_0，四优化器初始状态为空；g1_amp_warm9000_feet70_diag.initial_audit.json。当前仅诊断，独立步态结果待训练完成。
+
+- 2026-11-04T09:52:57 70维同源诊断已进入完整actor反传（日志600/1000），driver2802496/child2802600实际存活；观测GPU峰值23404MiB/利用率92%，18432env保持原学习批次可容纳。当前model_0已保存并完成匹配审计，model_1000及独立步态尚待结束；训练期falls/min不作为验收。
+
+- 70维同源诊断结束g1_amp_warm9000_feet70_diag，日志logs/amp_g1/g1_amp_warm9000_feet70_diag.log；必须继续检查模型/独立报告，不以退出码或D分数代替成功。
+
+- 70维同源诊断启动g1_amp_warm9000_feet70_diag_assessment，driver PID2802496、child PID2807823；命令/配置/日志见logs/amp_g1/g1_amp_warm9000_feet70_diag.pipeline.json，仅单变量诊断，不是正式成功来源，勿重复启动。
+
+- 2026-11-04T09:55:46 70维1000轮训练完成并保存model_0/1000，目录logs/supermimic/2026-11-04_09-49-14_815830_g1_amp_warm9000_feet70_diag；四网更新/优化器/匹配来源审计通过（g1_amp_warm9000_feet70_diag.audit.json），训练观测峰值23404MiB/GPU92%。独立七指令model_0/1000评估已启动child2807823，原driver2802496继续；训练完成不代表步态通过，勿重复启动。
+
+- 70维同源诊断结束g1_amp_warm9000_feet70_diag_assessment，日志logs/amp_g1/g1_amp_warm9000_feet70_diag_assessment.log；必须继续检查模型/独立报告，不以退出码或D分数代替成功。
+
+- 70维同源1000轮及model_0/1000独立七指令步态评估全部结束，报告logs/amp_g1/g1_amp_warm9000_feet70_diag_assessment.json；下一步对照64维和无AMP的步频/摆动/离地/足滑及速度，只有真实步态收益才延长。G1尚未宣布成功。
+
+- 2026-11-04T09:58:41+08:00 关键评估核实：70维1000轮及model_0/1000七指令×8env×20s独立评估已全部完成，pipeline complete；driver2802496/训练2802600/评估2807823均退出，GPU无计算进程（1MiB/0%）。0.6/1.0m/s实际vx=.5932/1.0199、步频3.533/3.800Hz、腾空.0815/.0913s、离地7.13/14.18mm、足滑.1072/.2087m/s，七组零摔倒但仍未通过walk。证据g1_amp_warm9000_feet70_diag_assessment.json、pipeline.json与audit.json（均logs/amp_g1）。下一步更新用户要求的全程问题/方案/效果报告及四臂对照，不启动新实验，不以风格改善宣称成功。
+
+- 2026-11-04T10:02:12+08:00 用户要求的全程问题/方案/效果报告已补齐至70维训练及独立评估结束：数据与接口、R1/R2/R3、RSI/几何排查、动态拟合/响应/MPC、价值锚定、Go2课程复现、四臂AMP特征、奖励梯度、容量和执行错误均覆盖；明确已修复/局部改善/真实步态收益的区别。四臂对照与足端特征文档同步更新；G1未验收成功，不启动新实验。报告docs/experiments/G1_AMP_ISSUES_AND_SOLUTIONS_2026-11-04.md，下一步核对原始JSON与文档指标、检查diff后提交并同步本地主机交付副本。
+
+- 2026-11-04T10:04:37+08:00 报告核验完成：四臂8行物理指标逐项对照原始JSON、31份关键证据文件存在、70维pipeline complete及实现/更新审计passed；另核对R1/R2/R3最终速度和9000来源。纠正旧报告R1前进步频精确值为.016Hz（非严格0，仍无有效步态）。文档diff检查通过，未改训练代码或启动实验；准备提交报告/四臂对照/足端报告及本轮交接记录。
