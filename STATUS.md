@@ -5,7 +5,7 @@
 
 ## 版本与范围
 
-- 当前HEAD `4d5462f0ef776eed247dadae346ed01b569e6d37`。已提交新G1 D组件profile和冷启动历史纠正；当前训练相关源码SHA256保存在 `logs/amp_g1/implicit_velocity_r1.pipeline.json`，其受测D/GPU源码记录为 `discriminator_alignment_validation.pipeline.json`。文档改动不改变训练内核。
+- 当前HEAD `707eb41d033ce9f389c67f6b918e63615cbe68ae`。已提交新G1 D组件profile和冷启动历史纠正；当前训练相关源码SHA256保存在 `logs/amp_g1/implicit_velocity_r1.pipeline.json`，其受测D/GPU源码记录为 `discriminator_alignment_validation.pipeline.json`。文档改动不改变训练内核。
 - Manager/A1已独立完成，checkpoint为 `checkpoints/go2_manager_converged.pt`、`checkpoints/a1_amp_converged.pt`。G1当前仅29DOF、平地walk、SuperMimic/可微想象、禁PPO，未通过最终验收。G1成功提交后才做X1下半身12DOF，部署参考reference/AMP，跳过RKNN。
 - G1 `g1_implicit_pd_v1`：PhysX隐式PD、固定限矩88/139/25/5Nm，无DC降额。用户允许IdealPD候选但无切换证据。`g1_state84_base_contact_v1`：WM84/critic125/actor480；旧DC/83维WM禁止直接导入。
 - 上游16项reward `g1_legged_lab_walk_v1`，最终AMP `R=.5task+dt*style`。训练终止height<.2或torso/pelvis接触；独立评估仍 `native_or_height05_tilt60_v1`。严格越界采样不等同独立摔倒回合数。
@@ -14,15 +14,15 @@
 ## 当前唯一队列与配置
 
 - 原 `logs/amp_g1/implicit_velocity_r1.pipeline.json` 已complete，原driver3008096及全部child已退出，0/1000步态和1000完整速度结束，无重复训练。
-- 当前 `logs/amp_g1/implicit_velocity_extension_r1.pipeline.json`，driver `3020615`、child `3020789` 已用ps核实存活，阶段 `implicit_velocity_extension_train3000`；完整命令、实时checkpoint/显存及PID以pipeline.jobs为准。驱动日志 `logs/amp_g1/implicit_velocity_extension_r1.driver.log`。
-- 当前运行目录 `logs/supermimic/2026-11-04_14-53-53_184959_g1_implicit_velocity_cold_r1_to3000`；配置同目录config.json；日志 `logs/amp_g1/implicit_velocity_extension_train3000.log`。来源 `logs/supermimic/2026-11-04_14-43-09_759735_g1_implicit_velocity_cold_r1/model_1000.pt`，三网/三优化器 `--resume --continue-run`，从1000计数到3000，保持同一随机来源；保存2000/3000后两点完整速度与步态评估，不自动进入AMP。
+- 当前 `logs/amp_g1/implicit_velocity_extension_r1.pipeline.json`，driver `3032041`、child `3033193` 已用ps核实存活，阶段 `implicit_velocity_extension_velocity`；完整命令、实时checkpoint/显存及PID以pipeline.jobs为准。驱动日志 `logs/amp_g1/implicit_velocity_extension_r1.driver.log`。
+- 当前运行目录 `logs/supermimic/2026-11-04_14-53-53_184959_g1_implicit_velocity_cold_r1_to3000`；配置同目录config.json；日志 `logs/amp_g1/implicit_velocity_extension_train3000.log`。来源 `logs/supermimic/2026-11-04_14-43-09_759735_g1_implicit_velocity_cold_r1/model_1000.pt`，三网/三优化器 `--resume --continue-run`，1000→3000训练已结束，保持同一随机来源；目前仅审计/评估恢复，2000/3000两点完整速度与步态评估进行中，不自动进入AMP。
 - 当前隐式PD/state84，上游16项任务奖励固定，AMP/D/RSI均关闭；没有速度范围课程或奖励渐进。vx[0,1.2]、vy±.3、yaw±.8、10%站立、6–10秒重采样。
 - 18432env/collect1/buffer128；WM512×3/window8/batch4096×4；actor及critic512,256,128；imag8192/H32/critic3×4；actor_lr_scale.15、OU.3占25%/Gaussian.1；原WM300/critic200预热已完成，不重计数，actor ramp500已达到最终值，FP32 highest/编译。其他学习参数未改。
 - 无AMP完整反传profiling18432约59320转移/s、峰23170MiB，按余量跳过20480（不是OOM）。当前续训最近后段约59676/s，峰23698MiB；勿与其他GPU任务并发。profile模型不作来源。
 
 ## 最新/最佳checkpoint与最近指标
 
-- 当前新PD无AMP最新 `logs/supermimic/2026-11-04_14-43-09_759735_g1_implicit_velocity_cold_r1/model_1000.pt`；1000已完整评估失败，无已验收最佳。1000包含300轮WM与200轮critic预热，actor有效更新500次；正在补足3000预算至2500次actor更新。
+- 当前新PD无AMP最新 `logs/supermimic/2026-11-04_14-53-53_184959_g1_implicit_velocity_cold_r1_to3000/model_3000.pt`；1000已完整评估失败，无已验收最佳。1000包含300轮WM与200轮critic预热，actor有效更新500次；正在补足3000预算至2500次actor更新。
 - 1000三网/三优化器审计通过，更新500/8400/4000。七指令物理步态失败22项；forward/fast vx RMSE1.370/1.444、严格fall/越界采样593/600、步频.044/.033Hz。完整速度失败30项，固定整体RMSE1.329/.337/.539，三随机vx RMSE1.313/1.294/1.330，均未达AMP入口。结论 `logs/amp_g1/implicit_velocity_r1_assessment1000.json`，报告及思路 `doc/G1_IMPLICIT_VELOCITY_COLD_START_2026-11-04.md`。
 - 最近旧新PD AMP模型 `logs/supermimic/2026-11-04_13-09-39_985939_g1_aligned_formal_r1_to3000/model_3000.pt`，SHA256 `426459ba148ddff2e907d7c74336d02b09dbaf5c8593d501f26e3fd7db846ce0`。它不是当前训练来源，也不是已验收最佳。
 - 旧AMP2000/3000完整速度失败30/19项、步态22/15项；3000固定整体RMSE(vx/vy/yaw)=.646/.204/.461，forward/fast实际vx≈.004/.004m/s，步频/腾空/净空0；六组零严格fall、转弯16。证据 `aligned_extension_velocity2000_3000.json`、`aligned_extension_gait2000_3000.json`（均logs/amp_g1下）。稳定站立不算walk。
@@ -48,7 +48,7 @@
 ```bash
 cd /pfs/user/learning/amp_new
 cat logs/amp_g1/implicit_velocity_extension_r1.pipeline.json
-ps -p 3020615,3020789 -o pid,ppid,etime,stat,args
+ps -p 3032041,3033193 -o pid,ppid,etime,stat,args
 nvidia-smi
 tail -n 8 logs/amp_g1/implicit_velocity_extension_train3000.log
 ```
@@ -78,3 +78,21 @@ tail -n 8 logs/amp_g1/implicit_velocity_extension_train3000.log
 - 2026-11-04T14:52:44.579164+08:00 隐式PD速度冷启动队列启动implicit_velocity_extension_train3000，driver3020615/child3020789；命令/配置/状态logs/amp_g1/implicit_velocity_extension_r1.pipeline.json，日志logs/amp_g1/implicit_velocity_extension_train3000.log，勿重复启动。
 
 - 2026-11-04T14:56:32+08:00：已按上游默认4096环境/24步/4D更新/每批24576换算后续唯一D预算候选24576×3/interval4（18432env），匹配全局新增转移的样本与优化步比。仅预设、尚未GPU验证，未改变当前无AMP续训；见D_SAMPLE_BUDGET文档。
+
+- 2026-11-04T14:59:49+08:00 同谱系2000已保存并完成CPU实际checkpoint审计：actor/critic/WM更新1500/20400/8000、三网有限且较1000变化、原随机来源和任务保持，AMP关闭；证据logs/amp_g1/implicit_velocity_interim2000_audit.json。原driver3020615/child3020789继续到3000，未做2000物理验收，不提前接AMP。
+
+- 2026-11-04T15:04:37.038679+08:00 隐式PD速度冷启动队列结束implicit_velocity_extension_train3000，returncode=0/valid=True；峰值23698MiB/GPU88%，证据logs/amp_g1/implicit_velocity_extension_train3000.log。退出码或训练期指标不代表walk成功。
+
+- 2026-11-04T15:04:37.055787+08:00 新PD速度续训队列失败AssertionError('wm_hidden')，核实logs/amp_g1/implicit_velocity_extension_r1.pipeline.json、PID和日志；不自动重复训练。
+
+- 2026-11-04T15:06:02+08:00 新PD无AMP3000训练returncode0/validTrue并保存2000/3000。审计脚本重现wm_hidden list/tuple误判，原failed.json/failed.pipeline.py保留；仅将同值序列按JSON规范化比较，其他数值差异仍拒绝。启动仅审计/评估恢复driver3032041，状态仍implicit_velocity_extension_r1.pipeline.json；没有重训或修改训练源码/配置。
+
+- 2026-11-04T15:06:04.316110+08:00 隐式PD速度冷启动队列启动implicit_velocity_extension_gait，driver3032041/child3032214；命令/配置/状态logs/amp_g1/implicit_velocity_extension_r1.pipeline.json，日志logs/amp_g1/implicit_velocity_extension_gait.log，勿重复启动。
+
+- 2026-11-04T15:07:03+08:00：仅恢复审计后两点实际检查通过，2000/3000 actor/critic/WM更新1500/20400/8000、2500/32400/12000，三网及优化器有限、配置数值和原随机来源保持。证据logs/amp_g1/implicit_velocity_extension_update_audit.json；当前implicit_velocity_extension_gait child3032214已核实存活。1000→3000训练未重复，不把参数更新等同能走。
+
+- 2026-11-04T15:07:07.961682+08:00 隐式PD速度冷启动队列结束implicit_velocity_extension_gait，returncode=0/valid=True；峰值5634MiB/GPU45%，证据logs/amp_g1/implicit_velocity_extension_gait.log。退出码或训练期指标不代表walk成功。
+
+- 2026-11-04T15:07:07.964564+08:00 隐式PD速度冷启动队列启动implicit_velocity_extension_velocity，driver3032041/child3033193；命令/配置/状态logs/amp_g1/implicit_velocity_extension_r1.pipeline.json，日志logs/amp_g1/implicit_velocity_extension_velocity.log，勿重复启动。
+
+- 2026-11-04T15:09:09+08:00：2000/3000七指令独立步态完整结束：forward/fast步频/腾空/净空均0，vx RMSE约.595/.995，主要站立；七组严格fall总采样7/23。两点均不满足诊断AMP入口，暂不引入AMP。原恢复driver3032041/child3033193继续完整速度评估。下一独立方向为让当前新PD G1速度任务真正接入Go2弱初期正则→最终奖励课程，先CPU/GPU验证；不把当前被跳过的schedule当已有课程，不盲续固定奖励或调AMP权重。证据doc/G1_IMPLICIT_VELOCITY_COLD_START_2026-11-04.md。
