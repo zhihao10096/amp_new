@@ -28,7 +28,7 @@ def annotate_frame(frame, command, velocity, elapsed, robot_name="Go2"):
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("task", nargs="?", default=None, choices=["Go2-Velocity-Flat", "A1-AMP-Flat"])
+  parser.add_argument("task", nargs="?", default=None, choices=["Go2-Velocity-Flat", "A1-AMP-Flat", "G1-Velocity-Flat"])
   parser.add_argument("--checkpoint", required=True)
   parser.add_argument("--num-envs", type=int, default=64)
   parser.add_argument("--seconds", type=float, default=30)

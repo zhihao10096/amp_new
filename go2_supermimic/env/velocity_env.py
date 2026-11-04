@@ -33,9 +33,15 @@ class Go2VelocityEnv(ManagerBasedRLEnv):
       list(self.cfg.undesired_contact_patterns))
     self.consts = robot_consts(self)
     self.amp_discriminator = None
-    self.amp_motion = (
-      amp_api(self.robot_kind).MotionLibrary(self.cfg.amp_motion_files, self.device, self.step_dt)
-      if self.cfg.amp_enabled and self.cfg.amp_motion_files else None)
+    if self.cfg.amp_enabled and self.cfg.amp_motion_files:
+      motion_kwargs = {}
+      if self.robot_kind == "g1":
+        motion_kwargs["feature_schema"] = getattr(
+          self.cfg, "amp_feature_schema", "g1_amp_61_v1")
+      self.amp_motion = amp_api(self.robot_kind).MotionLibrary(
+        self.cfg.amp_motion_files, self.device, self.step_dt, **motion_kwargs)
+    else:
+      self.amp_motion = None
     if self.amp_motion is not None and self.robot_kind == "g1":
       if self.robot.joint_names != self.amp_motion.joint_names:
         raise ValueError("G1 motion and PhysX joint order differ")

@@ -20,6 +20,17 @@ from go2_supermimic.amp import MotionLibrary as PairMotionLibrary
 
 NUM_JOINTS, NUM_FEET = 29, 2
 STATE_DIM, GAIT_DIM, AMP_DIM = 83, 8, 61
+DEFAULT_AMP_FEATURE_SCHEMA = "g1_amp_61_v1"
+AMP_FEATURE_DIMS = {
+  DEFAULT_AMP_FEATURE_SCHEMA: 61,
+  "g1_amp_64_velocity_v1": 64,
+}
+
+def amp_feature_dim(feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA) -> int:
+  try:
+    return AMP_FEATURE_DIMS[feature_schema]
+  except KeyError as exc:
+    raise ValueError(f"unsupported G1 AMP feature schema: {feature_schema}") from exc
 Z, GRAV, V_B, W_B = slice(0, 1), slice(1, 4), slice(4, 7), slice(7, 10)
 Q, QD = slice(10, 39), slice(39, 68)
 FOOT_POS, FOOT_VEL = slice(68, 74), slice(74, 80)
@@ -175,29 +186,50 @@ def quat_inverse_apply(q: torch.Tensor, xyz: torch.Tensor) -> torch.Tensor:
   return quat_apply(torch.cat((q[..., :1], -q[..., 1:]), -1), xyz)
 
 
-def state_features(s: torch.Tensor, default_q: torch.Tensor) -> torch.Tensor:
-  return torch.cat((s[..., W_B], s[..., Q] + default_q, s[..., QD]), -1)
+def state_features(s: torch.Tensor, default_q: torch.Tensor,
+                   feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA) -> torch.Tensor:
+  base = torch.cat((s[..., W_B], s[..., Q] + default_q, s[..., QD]), -1)
+  if feature_schema == DEFAULT_AMP_FEATURE_SCHEMA:
+    return base
+  if feature_schema == "g1_amp_64_velocity_v1":
+    return torch.cat((s[..., V_B], base), -1)
+  amp_feature_dim(feature_schema)
+  raise AssertionError("unreachable feature schema")
 
 
-def frame_features(f: torch.Tensor) -> torch.Tensor:
+def frame_features(f: torch.Tensor,
+                   feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA) -> torch.Tensor:
   q = f[..., [6, 3, 4, 5]]
-  return torch.cat((quat_inverse_apply(q, f[..., 39:42]), f[..., 7:36], f[..., 42:71]), -1)
+  base = torch.cat((quat_inverse_apply(q, f[..., 39:42]), f[..., 7:36],
+                    f[..., 42:71]), -1)
+  if feature_schema == DEFAULT_AMP_FEATURE_SCHEMA:
+    return base
+  if feature_schema == "g1_amp_64_velocity_v1":
+    return torch.cat((quat_inverse_apply(q, f[..., 36:39]), base), -1)
+  amp_feature_dim(feature_schema)
+  raise AssertionError("unreachable feature schema")
 
 
 class AMPDiscriminator(PairDiscriminator):
-  features = staticmethod(state_features)
+  def __init__(self, hidden: tuple[int, ...] = (512, 256),
+               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA):
+    self.feature_schema = feature_schema
+    super().__init__(hidden, feature_dim=amp_feature_dim(feature_schema))
 
-  def __init__(self, hidden: tuple[int, ...] = (512, 256)):
-    super().__init__(hidden, feature_dim=AMP_DIM)
+  def features(self, state: torch.Tensor, default_q: torch.Tensor) -> torch.Tensor:
+    return state_features(state, default_q, self.feature_schema)
 
 
 class MotionLibrary(PairMotionLibrary):
   """Trusted, SHA-verified project copies; derivatives never cross the holdout."""
 
   def __init__(self, files: str = DEFAULT_G1_MOTIONS, device="cpu", dt: float = .02,
-               train_fraction: float = .8):
+               train_fraction: float = .8,
+               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA):
     if not 0 < train_fraction < 1 or dt <= 0:
       raise ValueError("invalid motion dt/split")
+    amp_feature_dim(feature_schema)
+    self.feature_schema = feature_schema
     directory = Path(files)
     manifest = json.loads((directory / "manifest.json").read_text())
     self.joint_names = manifest["joint_names"]
@@ -251,17 +283,26 @@ class MotionLibrary(PairMotionLibrary):
     self.metadata = {"schema": "g1_amp_61_v1", "dt": dt, "train_fraction": train_fraction,
                      "source_commit": manifest["source_commit"],
                      "joint_names": self.joint_names, "motions": metadata}
+    if feature_schema != DEFAULT_AMP_FEATURE_SCHEMA:
+      self.metadata["schema"] = feature_schema
+      self.metadata["feature_schema"] = feature_schema
 
-  def sample_pairs(self, batch: int, train: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
+  def sample_pairs(self, batch: int, train: bool = True,
+                   feature_schema: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    schema = self.feature_schema if feature_schema is None else feature_schema
+    amp_feature_dim(schema)
     clips, times = self.sample_times(batch, train)
-    return frame_features(self.at_time(clips, times)), frame_features(self.at_time(clips, times + self.dt))
+    return (frame_features(self.at_time(clips, times), schema),
+            frame_features(self.at_time(clips, times + self.dt), schema))
 
 
 @torch.no_grad()
 def heldout_style_distance(pairs: torch.Tensor, library: MotionLibrary,
-                           command_vx: float) -> float:
+                           command_vx: float,
+                           feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA) -> float:
   """Independent speed-conditioned temporal holdout distance, without D scores."""
-  if pairs.ndim != 2 or pairs.shape[-1] != 2 * AMP_DIM or len(pairs) < 128:
+  feature_dim = amp_feature_dim(feature_schema)
+  if pairs.ndim != 2 or pairs.shape[-1] != 2 * feature_dim or len(pairs) < 128:
     raise ValueError("G1 style evaluation needs at least 128 real transition pairs")
   a, b = library.sample_pairs(4096, train=True)
   scale = torch.cat((a, b), -1).std(0, unbiased=False).clamp(min=.05)
@@ -270,10 +311,11 @@ def heldout_style_distance(pairs: torch.Tensor, library: MotionLibrary,
   vx = (quat_inverse_apply(fa[:, [6, 3, 4, 5]], fa[:, 36:39])[:, 0]
         + quat_inverse_apply(fb[:, [6, 3, 4, 5]], fb[:, 36:39])[:, 0]) * .5
   keep = (vx - command_vx).abs() < .35
-  reference = torch.cat((frame_features(fa[keep]), frame_features(fb[keep])), -1)
+  reference = torch.cat((frame_features(fa[keep], feature_schema),
+                          frame_features(fb[keep], feature_schema)), -1)
   if len(reference) < 128:
     raise ValueError("insufficient held-out walk data in requested speed band")
   reference = reference[:2048] / scale
   distances = [torch.cdist(query / scale, reference).square().min(-1).values
                for query in pairs.split(256)]
-  return (torch.cat(distances).mean() / (2 * AMP_DIM)).item()
+  return (torch.cat(distances).mean() / (2 * feature_dim)).item()

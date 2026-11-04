@@ -73,6 +73,7 @@ class TrainCfg:
   reward_curriculum_end: int = 0
   """Zero disables the curriculum; otherwise reach final rewards at this iteration."""
   amp_motion_files: str = ""
+  amp_feature_schema: str = "g1_amp_61_v1"
   amp_hidden: tuple[int, ...] = (512, 256)
   amp_weight: float = .5
   amp_lr: float = 1e-4
@@ -174,8 +175,14 @@ class Trainer:
     self.opt_wm = torch.optim.Adam(self.wm.parameters(), lr=cfg.lr)
     self.opt_actor = torch.optim.Adam(self.actor.parameters(), lr=cfg.lr, betas=(0.9, 0.95))
     self.opt_critic = torch.optim.Adam(self.critic.parameters(), lr=cfg.lr)
-    self.amp = amp_api(env.robot_kind).AMPDiscriminator(cfg.amp_hidden).to(
-      self.device) if env.cfg.amp_enabled else None
+    if env.cfg.amp_enabled:
+      if env.robot_kind == "g1":
+        self.amp = amp_api(env.robot_kind).AMPDiscriminator(
+          cfg.amp_hidden, cfg.amp_feature_schema).to(self.device)
+      else:
+        self.amp = amp_api(env.robot_kind).AMPDiscriminator(cfg.amp_hidden).to(self.device)
+    else:
+      self.amp = None
     self.opt_amp = (torch.optim.Adam(self.amp.parameters(), lr=cfg.amp_lr, weight_decay=1e-4)
                     if self.amp is not None else None)
     self.env.amp_discriminator = self.amp
@@ -371,7 +378,11 @@ class Trainer:
       with torch.no_grad():
         policy = (self.amp.features(before, self.env.consts.default_q),
                   self.amp.features(after, self.env.consts.default_q))
-        expert = self.env.amp_motion.sample_pairs(self.cfg.amp_batch, train=True)
+        if self.env.robot_kind == "g1":
+          expert = self.env.amp_motion.sample_pairs(
+            self.cfg.amp_batch, train=True, feature_schema=self.cfg.amp_feature_schema)
+        else:
+          expert = self.env.amp_motion.sample_pairs(self.cfg.amp_batch, train=True)
       loss, values = self.amp.loss(expert, policy, self.cfg.amp_grad_penalty)
       self._update(loss, self.amp, self.opt_amp)
       values["amp_loss"] = loss.detach()

@@ -8,12 +8,13 @@ from go2_supermimic.task_api import amp_api
 
 def evaluation_config(checkpoint, num_envs, device, observation_noise=False):
   task = checkpoint["cfg"].get("task", "Go2-Velocity-Flat")
-  if task not in ("Go2-Velocity-Flat", "A1-AMP-Flat", "G1-AMP-Flat"):
+  if task not in ("Go2-Velocity-Flat", "A1-AMP-Flat", "G1-AMP-Flat",
+                  "G1-Velocity-Flat"):
     raise ValueError(f"unsupported checkpoint task: {task}")
   cfg = A1AmpEnvCfg() if task == "A1-AMP-Flat" else Go2VelocityEnvCfg()
-  if task == "G1-AMP-Flat":
-    from go2_supermimic.env.g1_cfg import G1AmpEnvCfg
-    cfg = G1AmpEnvCfg()
+  if task in ("G1-AMP-Flat", "G1-Velocity-Flat"):
+    from go2_supermimic.env.g1_cfg import G1AmpEnvCfg, G1VelocityEnvCfg
+    cfg = G1AmpEnvCfg() if task == "G1-AMP-Flat" else G1VelocityEnvCfg()
   if checkpoint.get("robot_kind", "go2") != cfg.robot_kind:
     raise ValueError("checkpoint task and robot metadata disagree")
   cfg.scene.num_envs = num_envs
@@ -25,6 +26,9 @@ def evaluation_config(checkpoint, num_envs, device, observation_noise=False):
   cfg.amp_reference_reset_fraction = 0.
   cfg.amp_enabled = "amp" in checkpoint
   cfg.amp_weight = checkpoint["cfg"].get("amp_weight", .5)
+  if task == "G1-AMP-Flat":
+    cfg.amp_feature_schema = checkpoint["cfg"].get(
+      "amp_feature_schema", "g1_amp_61_v1")
   return task, cfg
 
 
@@ -32,7 +36,12 @@ def attach_evaluation_amp(env, checkpoint):
   if "amp" not in checkpoint:
     env.amp_discriminator = None
     return
-  disc = amp_api(env.robot_kind).AMPDiscriminator(
-    tuple(checkpoint["cfg"]["amp_hidden"])).to(env.device)
+  if env.robot_kind == "g1":
+    disc = amp_api(env.robot_kind).AMPDiscriminator(
+      tuple(checkpoint["cfg"]["amp_hidden"]),
+      checkpoint["cfg"].get("amp_feature_schema", "g1_amp_61_v1")).to(env.device)
+  else:
+    disc = amp_api(env.robot_kind).AMPDiscriminator(
+      tuple(checkpoint["cfg"]["amp_hidden"])).to(env.device)
   disc.load_state_dict(checkpoint["amp"])
   env.amp_discriminator = disc.eval().requires_grad_(False)

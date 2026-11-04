@@ -67,6 +67,8 @@ def main():
     env_cfg.seed = cfg.seed
     if env_cfg.amp_enabled:
       env_cfg.amp_motion_files = cfg.amp_motion_files
+      if cfg.task == "G1-AMP-Flat":
+        env_cfg.amp_feature_schema = cfg.amp_feature_schema
       env_cfg.amp_weight = cfg.amp_weight
       env_cfg.amp_reference_reset_fraction = cfg.amp_reference_reset_fraction
     if cfg.resume or cfg.warm_start:

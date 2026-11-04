@@ -70,6 +70,24 @@ def test_features_match_expert_and_amp_preserves_state_gradient():
   assert not disc.reward(s, s, default, torch.zeros(32, 3)).any()
 
 
+
+def test_velocity_feature_schema_matches_expert_and_changes_dimension():
+  library = g1.MotionLibrary(feature_schema="g1_amp_64_velocity_v1")
+  f = library.sample_frames(32)
+  default = torch.randn(29)
+  s = torch.zeros(32, 83)
+  s[:, g1.Q], s[:, g1.QD] = f[:, 7:36] - default, f[:, 42:71]
+  s[:, g1.V_B] = g1.quat_inverse_apply(f[:, [6, 3, 4, 5]], f[:, 36:39])
+  s[:, g1.W_B] = g1.quat_inverse_apply(f[:, [6, 3, 4, 5]], f[:, 39:42])
+  torch.testing.assert_close(
+    g1.state_features(s, default, "g1_amp_64_velocity_v1"),
+    g1.frame_features(f, "g1_amp_64_velocity_v1"))
+  assert g1.state_features(s, default, "g1_amp_64_velocity_v1").shape[-1] == 64
+  disc = g1.AMPDiscriminator((16,), "g1_amp_64_velocity_v1")
+  features = disc.features(s, default)
+  assert disc(features, features).shape == (32,)
+
+
 def test_g1_replay_imagination_and_task_roundtrip():
   torch.manual_seed(42)
   task = replace(g1.walk_task(), history=2, observation_noise=False)

@@ -61,8 +61,15 @@ def main():
         raise ValueError("gait checkpoints must use identical robot and task settings")
       attach_evaluation_amp(env, checkpoint)
       expert = None
+      feature_schema = checkpoint["cfg"].get("amp_feature_schema",
+                                                  "g1_amp_61_v1")
       if "amp" in checkpoint:
-        expert = MotionLibrary(checkpoint["cfg"]["amp_motion_files"], env.device, env.step_dt)
+        if env.robot_kind == "g1":
+          expert = MotionLibrary(checkpoint["cfg"]["amp_motion_files"],
+                                 env.device, env.step_dt, feature_schema=feature_schema)
+        else:
+          expert = MotionLibrary(checkpoint["cfg"]["amp_motion_files"],
+                                 env.device, env.step_dt)
         if expert.metadata != checkpoint["amp_motion_metadata"]:
           raise ValueError("motion data changed since the evaluated AMP checkpoint")
       style_pairs = {"forward": [], "fast": []}
@@ -91,8 +98,13 @@ def main():
           measured = s[:, [4, 5, 9]]
           keep = age >= 1.0
           if expert is not None and step % 5 == 0:
-            pairs = torch.cat((state_features(env._state_before_action, env.consts.default_q),
-                               state_features(s, env.consts.default_q)), -1)
+            if env.robot_kind == "g1":
+              pairs = torch.cat((state_features(
+                env._state_before_action, env.consts.default_q, feature_schema),
+                state_features(s, env.consts.default_q, feature_schema)), -1)
+            else:
+              pairs = torch.cat((state_features(env._state_before_action, env.consts.default_q),
+                                 state_features(s, env.consts.default_q)), -1)
             for i, (name, _) in enumerate(suite):
               if name in style_pairs:
                 ids = slice(i * args.repeats, (i + 1) * args.repeats)
@@ -173,7 +185,12 @@ def main():
           ("forward", 1.), ("fast", 1.5))
         for name, vx in style_commands:
           torch.manual_seed(1701)
-          distances[name] = heldout_style_distance(torch.cat(style_pairs[name]), expert, vx)
+          if env.robot_kind == "g1":
+            distances[name] = heldout_style_distance(
+              torch.cat(style_pairs[name]), expert, vx, feature_schema=feature_schema)
+          else:
+            distances[name] = heldout_style_distance(
+              torch.cat(style_pairs[name]), expert, vx)
         result.update(style_distance=distances, style_metric=f"{env.robot_kind}_heldout_pairs_v1",
                       style_metric_seed=1701, amp_motion_metadata=expert.metadata)
       results.append(result)

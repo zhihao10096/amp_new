@@ -8,7 +8,7 @@ from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
 
 from go2_supermimic.env.env_cfg import Go2SceneCfg, Go2VelocityEnvCfg
-from go2_supermimic.g1 import DEFAULT_G1_MOTIONS, walk_task
+from go2_supermimic.g1 import DEFAULT_AMP_FEATURE_SCHEMA, DEFAULT_G1_MOTIONS, walk_task
 
 G1_USD = str(Path(__file__).resolve().parents[2] / "assets/robots/g1/g1_29dof_rev_1_0.usd")
 
@@ -70,6 +70,7 @@ class G1AmpEnvCfg(Go2VelocityEnvCfg):
   scene = G1SceneCfg(num_envs=1024, env_spacing=4., replicate_physics=True)
   amp_enabled = True
   amp_motion_files = DEFAULT_G1_MOTIONS
+  amp_feature_schema = DEFAULT_AMP_FEATURE_SCHEMA
   task = walk_task()
 
 
