@@ -5,7 +5,7 @@
 
 ## 版本、范围和决定
 
-- 当前 HEAD `20ad0d3a2490b0c2771b6c8d0b8748674832e0cf`；训练受测源码 `20ad0d3a2490b0c2771b6c8d0b8748674832e0cf`，23份源码SHA256一致。控制f32755e、奖励29b1875、终止eee92bb、RSI/严格评估/四帧审计20ad0d3。
+- 当前 HEAD `e969d8f2e61c7b2cfc78e03714b65b494c74bcf0`（本轮仅文档提交；下列源码哈希保持20ad0d3）；训练受测源码 `20ad0d3a2490b0c2771b6c8d0b8748674832e0cf`，23份源码SHA256一致。控制f32755e、奖励29b1875、终止eee92bb、RSI/严格评估/四帧审计20ad0d3。
 - Manager/A1已独立完成；G1仅29DOF/平地/walk，SuperMimic世界模型与可微想象，禁PPO。G1成功后才做X1下半身12DOF，跳过RKNN，部署参考reference/AMP；总目标未完成。
 - 控制 `g1_implicit_pd_v1`，固定限矩88/139/25/5Nm，无DC转速降额；用户允许IdealPD备选，已核对其显式PD/固定限矩源码。当前无隐式PD故障证据，保持与legged_lab一致；切换执行器须独立类型/新WM谱系，不直接续用旧动力学。
 - state `g1_state84_base_contact_v1`（WM84/critic125/actor480）；旧DC/83维WM禁止训练复用，旧隐式PD actor可独立评估。reward `g1_legged_lab_walk_v1`，16项及最终R=.5task+dtstyle。
@@ -51,3 +51,11 @@ nvidia-smi
 下一阶段先读 `logs/amp_g1/aligned_formal_r1_assessment1000.json`，审计仅500次actor更新与实际策略/WM响应，再决定训练时长或IdealPD单变量对照；尚未启动。
 
 - 2026-11-04T12:56:59+08:00 原队列已于2026-11-04T12:54:17.660648+08:00完成并退出，GPU0%/1MiB；1000单点passed=False，步态失败24项、速度失败30项。固定整体RMSE(vx/vy/yaw)=1.293/0.533/0.613，三随机种子vx RMSE1.281–1.300；没有已验收G1最佳模型，X1未开始。本轮未修改训练源码或启动额外实验，IdealPD仍为允许的独立候选，不能将当前失败归因于隐式PD。
+
+- 2026-11-04T13:00:02+08:00 续接目标：上一轮属于progress（完成新PD1000全套独立评估和审计，非仅状态复述）。已核实HEAD e969d8f/无旧PID或GPU作业。当前优先检验“500次actor更新不足”与“新动力学想象偏差”并存的假设；计划新增冻结G1模型审计，使用当前隐式PD/state84/上游混合/四帧AMP，普通/参考起点分别量测真实多步转移、闭环回报、终止概率及有限策略梯度。不复用历史DC诊断结论，不改控制/奖励或启动权重网格；审计后决定是否同配置续到3000。
+
+- 2026-11-04T13:01:46.016999+08:00 冻结G1模型审计启动driver2934344/child2934345；状态logs/amp_g1/aligned_model_audit1000.pipeline.json，输出logs/amp_g1/aligned_model_audit1000.json，当前PD/state84/四帧AMP，不训练。
+
+- 2026-11-04T13:02:03.119460+08:00 冻结G1模型审计结束，阶段complete/returncode0；证据logs/amp_g1/aligned_model_audit1000.json及同名.log。
+
+- 2026-11-04T13:06:30+08:00 冻结新模型审计已完成：普通/参考32步真实与想象bootstrap均值1.09807/1.09826、-.32111/-.28897；actor梯度10.13/4.26且有限、动作无clip，WM实际输入clip极少；参考32步速度预测RMSE.2088，尚未验证物理梯度方向。CPU项目范围92passed；不限定目录pytest误收集第三方logs/reference已排除。思路doc/G1_ALIGNED_MODEL_AUDIT_2026-11-04.md；GitHub独立SuperMimic复现仅作路线/预算参考，不直接移植参数。决定保持当前全部学习配置，1000同谱系续到3000并独立2000/3000评估；尚未启动，先提交工具和证据。
