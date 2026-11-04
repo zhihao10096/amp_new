@@ -150,7 +150,11 @@ def main():
           sums["flight"] += (~contact.any(-1)).float() * keep
           sums["base_height"] += s[:, 0] * keep
           sums["samples"] += keep
-          sums["falls"] += term
+          if env.robot_kind == "g1":
+            from go2_supermimic.g1_validation import evaluation_falls
+            sums["falls"] += evaluation_falls(s, term)
+          else:
+            sums["falls"] += term
           sq += (measured - commands).square() * keep[:, None]
           velocities += measured * keep[:, None]
           age += env.step_dt
@@ -182,6 +186,9 @@ def main():
                 "checkpoint_backend": checkpoint.get("environment_backend", "legacy_direct"),
                 "robot_kind": env.robot_kind,
                 "seconds": args.seconds, "repeats": args.repeats, "seed": args.seed, "cases": cases}
+      if env.robot_kind == "g1":
+        from go2_supermimic.g1_validation import G1_FALL_DEFINITION
+        result["fall_definition"] = G1_FALL_DEFINITION
       if expert is not None:
         distances = {}
         style_commands = (("forward", .6), ("fast", 1.)) if env.robot_kind == "g1" else (

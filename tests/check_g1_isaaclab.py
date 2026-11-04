@@ -14,6 +14,7 @@ parser.add_argument("--compile", action="store_true")
 parser.add_argument("--amp-feature-schema", default="g1_amp_61_v1")
 parser.add_argument("--amp-num-frames", type=int, default=2)
 parser.add_argument("--legacy-rewards", action="store_true")
+parser.add_argument("--align-reset-commands", action="store_true")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 launcher = AppLauncher(args)
@@ -45,6 +46,7 @@ try:
   cfg.task.commands.resampling_time = (.12, .18)
   cfg.episode_length_s = .8
   cfg.amp_reference_reset_fraction = .5
+  cfg.amp_reset_command_alignment = args.align_reset_commands
   cfg.amp_feature_schema = args.amp_feature_schema
   cfg.amp_num_frames = args.amp_num_frames
   env = gym.make("G1-AMP-Flat", cfg=cfg).unwrapped
@@ -106,7 +108,30 @@ try:
     command_gate=cfg.task.reward_profile != g1.REWARD_PROFILE).to(env.device).requires_grad_(False)
   disc.norm.update(torch.cat(env.amp_motion.sample_pairs(1024)))
   env.amp_discriminator = disc
+  alignment_checks = ordinary_reset_checks = 0
+  alignment_max_error = 0.
+
+  def check_reset_alignment(reset_mask):
+    global alignment_checks, ordinary_reset_checks, alignment_max_error
+    if not cfg.amp_reset_command_alignment or env.fixed_command is not None:
+      return
+    assert not env._amp_reference_command_pending[reset_mask].any()
+    reference = reset_mask & env.amp_reference_reset
+    state = robot_state(env)
+    command_cfg = cfg.task.commands
+    expected = torch.stack((
+      state[:, 4].clamp(*command_cfg.lin_vel_x),
+      state[:, 5].clamp(*command_cfg.lin_vel_y),
+      state[:, 9].clamp(*command_cfg.ang_vel_z)), -1)
+    if reference.any():
+      error = (env.commands[reference] - expected[reference]).abs().max().item()
+      alignment_max_error = max(alignment_max_error, error)
+      torch.testing.assert_close(env.commands[reference], expected[reference], atol=2e-5, rtol=2e-5)
+    alignment_checks += reference.sum().item()
+    ordinary_reset_checks += (reset_mask & ~reference).sum().item()
+
   obs, _ = env.reset(seed=42)
+  check_reset_alignment(torch.ones(32, dtype=torch.bool, device=env.device))
   assert obs["policy"].shape == (32, 480)
   frames = env.amp_motion.sample_frames(32)
   root = env.robot.data.root_state_w.clone()
@@ -127,6 +152,7 @@ try:
               - native_feet).abs().max().item()
   assert fk_error < 1e-4, fk_error
   obs, _ = env.reset()
+  check_reset_alignment(torch.ones(32, dtype=torch.bool, device=env.device))
   resets = falls = resamples = timeouts = contact_falls = 0
   real_td_max_error = 0.
   native_torque_proxy_difference = native_acceleration_proxy_difference = 0.
@@ -182,6 +208,7 @@ try:
     real_td_max_error = max(real_td_max_error, (targets - expected_target).abs().max().item())
     torch.testing.assert_close(real_inputs[:, :g1.STATE_DIM], before[keep])
     done = term | trunc
+    check_reset_alignment(done)
     if cfg.task.reward_profile == g1.REWARD_PROFILE and (~done).any():
       valid = ~done
       estimated_torque = g1.motor_torque(state, action, env.consts, cfg.task)
@@ -205,6 +232,13 @@ try:
     resamples += ((remaining <= env.step_dt) & ~done).sum().item()
   assert resets > 0 and falls > 0 and resamples > 0 and timeouts > 0
   assert native_checks > 0 and contact_falls > 0
+  if cfg.amp_reset_command_alignment:
+    assert alignment_checks > 0 and ordinary_reset_checks > 0
+    # A timed resample must not reuse any old reference frame.
+    assert not env._amp_reference_command_pending.any()
+    env.command_manager.get_term("base_velocity")._resample(
+      torch.arange(32, device=env.device))
+    assert not torch.equal(env.commands, env._amp_reference_commands)
   env.cfg.amp_reference_reset_fraction = 0.
   env.set_command((.6, 0., 0.))
   obs, _ = env.reset()
@@ -244,6 +278,10 @@ try:
             "termination_profile": cfg.task.termination_profile,
             "native_termination_oracle_checks": native_checks,
             "base_contact_falls": contact_falls,
+            "amp_reset_command_alignment": cfg.amp_reset_command_alignment,
+            "aligned_reference_reset_checks": alignment_checks,
+            "ordinary_reset_checks": ordinary_reset_checks,
+            "reset_alignment_max_error": alignment_max_error,
             "reward_profile": cfg.task.reward_profile,
             "amp_command_gate": disc.command_gate,
             "final_task_style_coefficients": g1.amp_reward_coefficients(cfg.task, .5),

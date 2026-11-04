@@ -44,6 +44,13 @@ class BodyVelocityCommand(CommandTerm):
 
   def _resample_command(self, env_ids):
     commands, _ = v.sample_commands(len(env_ids), self.device, self._env.cfg.task.commands)
+    if self._env.cfg.amp_reset_command_alignment:
+      # The reset event runs before CommandManager.reset. Consume this once;
+      # Lab versions increment command_counter at different callback points.
+      pending = self._env._amp_reference_command_pending[env_ids]
+      commands = torch.where(
+        pending[:, None], self._env._amp_reference_commands[env_ids], commands)
+      self._env._amp_reference_command_pending[env_ids] = False
     self._command[env_ids] = commands if self.fixed_command is None else self.fixed_command[env_ids]
 
   def _update_command(self):
@@ -74,6 +81,8 @@ def reset_robot(env, env_ids):
   """Reset event: random yaw/joints, standing root state and cleared gait."""
   env.gait[env_ids] = 0
   env._amp_history_reset[env_ids] = True
+  env.amp_reference_reset[env_ids] = False
+  env._amp_reference_command_pending[env_ids] = False
   root = env.robot.data.default_root_state[env_ids].clone()
   root[:, :3] += env.scene.env_origins[env_ids]
   yaw = torch.rand(len(env_ids), device=env.device) * (2 * torch.pi)
@@ -85,6 +94,11 @@ def reset_robot(env, env_ids):
   if env.amp_motion is not None:
     frames = env.amp_motion.sample_frames(len(env_ids), train=True)
     use_reference = torch.rand(len(env_ids), device=env.device) < env.cfg.amp_reference_reset_fraction
+    env.amp_reference_reset[env_ids] = use_reference
+    if env.robot_kind == "g1" and env.cfg.amp_reset_command_alignment:
+      from go2_supermimic.g1 import reference_commands
+      env._amp_reference_commands[env_ids] = reference_commands(frames, env.cfg.task.commands)
+      env._amp_reference_command_pending[env_ids] = use_reference
     orientation = quat_mul(root[:, 3:7], frames[:, [6, 3, 4, 5]])
     root[:, 2] = torch.where(
       use_reference, frames[:, 2] + env.scene.env_origins[env_ids, 2], root[:, 2])

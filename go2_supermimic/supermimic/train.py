@@ -86,6 +86,8 @@ class TrainCfg:
   amp_grad_penalty: float = 10.
   amp_ramp_iterations: int = 1000
   amp_reference_reset_fraction: float = .5
+  amp_reset_command_alignment: bool = False
+  """G1-only RSI command alignment; ordinary and timed resamples stay random."""
 
   def __post_init__(self):
     if self.matmul_precision not in ("highest", "high", "medium"):
@@ -117,6 +119,8 @@ class TrainCfg:
     if (self.amp_weight < 0 or self.amp_grad_penalty < 0 or self.amp_lr <= 0
         or not 0 <= self.amp_reference_reset_fraction <= 1):
       raise ValueError("invalid AMP reward, learning rate, penalty or reset fraction")
+    if self.amp_reset_command_alignment and self.task != "G1-AMP-Flat":
+      raise ValueError("amp_reset_command_alignment requires G1-AMP-Flat")
 
 
 class Actor(nn.Module):

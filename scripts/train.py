@@ -34,7 +34,8 @@ def main():
     supplied = {x.split("=", 1)[0] for x in sys.argv[1:]}
     for name in values:
       if (name in ("task", "critic_real_fraction") or name.startswith("amp_")) and (
-          "--" + name.replace("_", "-") not in supplied):
+          "--" + name.replace("_", "-") not in supplied
+          and "--no-" + name.replace("_", "-") not in supplied):
         values[name] = resume_checkpoint["cfg"].get(name, values[name])
   if values["task"] == "A1-AMP-Flat" and not values["amp_motion_files"]:
     from go2_supermimic.amp import DEFAULT_A1_MOTIONS
@@ -78,6 +79,7 @@ def main():
         env_cfg.amp_num_frames = cfg.amp_num_frames
       env_cfg.amp_weight = cfg.amp_weight
       env_cfg.amp_reference_reset_fraction = cfg.amp_reference_reset_fraction
+      env_cfg.amp_reset_command_alignment = cfg.amp_reset_command_alignment
     if cfg.resume or cfg.warm_start:
       ckpt = (resume_checkpoint if resume_checkpoint is not None
               else load_checkpoint(cfg.warm_start, "cpu"))

@@ -26,6 +26,7 @@ def evaluation_config(checkpoint, num_envs, device, observation_noise=False):
   # Independent evaluation always starts from ordinary standing resets.
   cfg.amp_motion_files = ""
   cfg.amp_reference_reset_fraction = 0.
+  cfg.amp_reset_command_alignment = False
   cfg.amp_enabled = "amp" in checkpoint
   cfg.amp_weight = checkpoint["cfg"].get("amp_weight", .5)
   if task == "G1-AMP-Flat":

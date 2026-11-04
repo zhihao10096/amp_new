@@ -74,7 +74,11 @@ def main():
         sq += error * keep[:, None]
         velocity_sum += actual * keep[:, None]
         samples += keep
-        falls += term
+        if env.robot_kind == "g1":
+          from go2_supermimic.g1_validation import evaluation_falls
+          falls += evaluation_falls(transition["next_state"], term)
+        else:
+          falls += term
         contact = transition["next_state"][:, env.task_api.CONTACT]
         flight += (contact < .5).all(-1) * keep
         age += 1
@@ -124,6 +128,9 @@ def main():
                 "seconds": steps * env.step_dt, "settle_seconds": settling * env.step_dt,
                 "observation_noise": cfg.task.observation_noise,
                 "environments": env.num_envs, "fixed": fixed, "random": random}
+      if env.robot_kind == "g1":
+        from go2_supermimic.g1_validation import G1_FALL_DEFINITION
+        result["fall_definition"] = G1_FALL_DEFINITION
       results.append(result)
       print(json.dumps(result, indent=2), flush=True)
       output = Path(args.output)

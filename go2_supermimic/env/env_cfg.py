@@ -92,6 +92,7 @@ class Go2VelocityEnvCfg(ManagerBasedRLEnvCfg):
   amp_enabled: bool = False
   amp_motion_files: str = ""
   amp_reference_reset_fraction: float = .5
+  amp_reset_command_alignment: bool = False
   amp_weight: float = .5
   amp_num_frames: int = 2
   decimation = 4

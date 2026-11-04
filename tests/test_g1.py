@@ -116,11 +116,11 @@ def test_g1_replay_imagination_and_task_roundtrip():
 
 
 def test_g1_acceptance_rejects_running_and_incomplete_evidence():
-  from go2_supermimic.g1_validation import G1_FIXED_CASES, G1_GAIT_CASES
+  from go2_supermimic.g1_validation import G1_FIXED_CASES, G1_GAIT_CASES, G1_FALL_DEFINITION
   from go2_supermimic.g1_validation import g1_gait_failures, g1_velocity_failures
   from go2_supermimic.validation import MANAGER_BACKEND
   common = {"environment_backend": MANAGER_BACKEND, "checkpoint_backend": MANAGER_BACKEND,
-            "robot_kind": "g1"}
+            "robot_kind": "g1", "fall_definition": G1_FALL_DEFINITION}
   speed = {**common, "seconds": 30, "settle_seconds": 1, "environments": 96,
            "observation_noise": False,
            "fixed": {"seed": 42, "cases": {

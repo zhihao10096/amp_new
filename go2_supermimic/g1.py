@@ -368,6 +368,16 @@ def quat_inverse_apply(q: torch.Tensor, xyz: torch.Tensor) -> torch.Tensor:
   return quat_apply(torch.cat((q[..., :1], -q[..., 1:]), -1), xyz)
 
 
+def reference_commands(frames: torch.Tensor, cfg: CommandCfg) -> torch.Tensor:
+  """Use the exact RSI frame's body velocity, clamped to the walk-only range."""
+  quat = frames[:, [6, 3, 4, 5]]
+  linear = quat_inverse_apply(quat, frames[:, 36:39])
+  angular = quat_inverse_apply(quat, frames[:, 39:42])
+  return torch.stack((linear[:, 0].clamp(*cfg.lin_vel_x),
+                      linear[:, 1].clamp(*cfg.lin_vel_y),
+                      angular[:, 2].clamp(*cfg.ang_vel_z)), -1)
+
+
 def state_features(s: torch.Tensor, default_q: torch.Tensor,
                    feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA) -> torch.Tensor:
   base = torch.cat((s[..., W_B], s[..., Q] + default_q, s[..., QD]), -1)

@@ -55,6 +55,9 @@ class Go2VelocityEnv(ManagerBasedRLEnv):
       self.num_envs, past, api.STATE_DIM, device=self.device)
     self._amp_history_reset = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
     self._amp_before_history = self._amp_state_history.clone()
+    self.amp_reference_reset = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+    self._amp_reference_commands = torch.zeros(self.num_envs, 3, device=self.device)
+    self._amp_reference_command_pending = torch.zeros_like(self.amp_reference_reset)
     self._state_before_action = robot_state(self).clone()
     self._transition_step = -1
     super().load_managers()

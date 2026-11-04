@@ -406,3 +406,69 @@
 - 2026-11-04T12:23:13.472272+08:00 终止84维CPU88/上游原生终止/想象编译梯度/同控制velocity→AMP热启动/四网20→25/旧profile及checkpoint/A1回归/七指令评估接口均完成。短跑不证明walk收敛。
 
 - 2026-11-04T12:25:38+08:00 84维终止接口完整验证结束，driver2896882退出，pipeline complete/audit passed；CPU88、原生终止1851次oracle、四网20→25/CLI恢复、旧83维WM拒绝/旧actor评估/A1回归全部通过。短跑737摔仍不代表收敛，source哈希与受测源码一致。doc/G1_TERMINATION_ALIGNMENT_2026-11-04.md补齐结果，STATUS已快照并更新最新checkpoint/配置，准备单独提交；RSI仅本地独立副本准备，未改本次受测源码。
+
+- 2026-11-04T12:25:38+08:00 终止接口单独提交eee92bbc9b6fdbbbea5dc9e6d82b09133b18cdbe，未提交无关改动、reference或日志/模型；STATUS写准确HEAD。继续独立RSI和严格评估门槛核对，未开启新长训。
+
+- 2026-11-04T12:28:20+08:00 终止提交eee92bb后进入独立RSI：amp_reset_command_alignment默认False，仅G1 AMP可启用；同帧机体系速度裁剪到walk范围，由reset事件写pending并由下一command回调消费，普通reset/回合中仍随机、fixed优先、评估关闭。补充保留验收原height<.5/tilt>60任一越界即fall的计数，新增fall_definition元数据；训练上游终止不变。另修最终审计按实际AMP历史长度重建项目内动作metadata（此前硬编码两帧会错误拒绝四帧）。不改奖励/控制/数据/D参数，不启动新长训。
+
+- 2026-11-04T12:30:20+08:00 RSI接口CPU92通过；真实GPU验证driver PID2907230已启动，状态logs/amp_g1/rsi_alignment_validation.pipeline.json。覆盖同帧速度/one-shot/混合reset/定时和fixed、默认关闭/CLI20→25继承/25→30显式关闭、四网恢复、严格七指令及速度评估、旧actor/A1回归；仅接口短跑，不是收敛。终止工作doc已同步本机并确认中央弹窗显示（eee92bb）。
+
+- 2026-11-04T12:30:21.692179+08:00 RSI接口验证启动rsi_alignment_reject83_resume，driver PID2907230、child PID2907333；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:30:24.725942+08:00 RSI接口验证结束rsi_alignment_reject83_resume，返回码1，预期拒绝=True，证据logs/amp_g1/rsi_alignment_reject83_resume.log。
+
+- 2026-11-04T12:30:24.729883+08:00 RSI接口验证启动rsi_alignment_reject83_warm-start，driver PID2907230、child PID2907375；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:30:27.764147+08:00 RSI接口验证结束rsi_alignment_reject83_warm-start，返回码1，预期拒绝=True，证据logs/amp_g1/rsi_alignment_reject83_warm-start.log。
+
+- 2026-11-04T12:30:27.766957+08:00 RSI接口验证启动rsi_alignment_integration，driver PID2907230、child PID2907426；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:30:41+08:00 RSI driver2907230已核实实际存活，启动后的STATUS重写变量冲突已修复，仅修改记录、未重启队列；进程/配置仍以原pipeline为准。
+
+- 2026-11-04T12:30:55.058048+08:00 RSI接口验证结束rsi_alignment_integration，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_integration.log。
+
+- 2026-11-04T12:30:55.065793+08:00 RSI接口验证启动rsi_alignment_default_off_integration，driver PID2907230、child PID2907938；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:31:22.322656+08:00 RSI接口验证结束rsi_alignment_default_off_integration，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_default_off_integration.log。
+
+- 2026-11-04T12:31:22.324217+08:00 RSI接口验证启动rsi_alignment_legacy_integration，driver PID2907230、child PID2908464；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:31:49.607508+08:00 RSI接口验证结束rsi_alignment_legacy_integration，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_legacy_integration.log。
+
+- 2026-11-04T12:31:49.609344+08:00 RSI接口验证启动rsi_alignment_velocity_smoke，driver PID2907230、child PID2908953；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:32:03+08:00 RSI原生GPU/编译passed：59参考reset同实际机器人机体系速度一致，最大误差4.17e-7；70普通reset覆盖，pending已一次性消费，定时随机/fixed/历史/终止接口通过，编译返回5.96e-8/actor梯度3.73e-9。默认关闭新profile也通过；driver2907230继续CLI恢复/显式关闭、评估及A1，未启动正式训练。证据logs/amp_g1/rsi_alignment_integration.json。
+
+- 2026-11-04T12:32:10.888835+08:00 RSI接口验证结束rsi_alignment_velocity_smoke，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_velocity_smoke.log。
+
+- 2026-11-04T12:32:10.898769+08:00 RSI接口验证启动rsi_alignment_smoke_initial，driver PID2907230、child PID2909368；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:32:38.212425+08:00 RSI接口验证结束rsi_alignment_smoke_initial，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_smoke_initial.log。
+
+- 2026-11-04T12:32:38.237026+08:00 RSI接口验证启动rsi_alignment_smoke_resume，driver PID2907230、child PID2910140；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:33:02.475973+08:00 RSI接口验证结束rsi_alignment_smoke_resume，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_smoke_resume.log。
+
+- 2026-11-04T12:33:02.489972+08:00 RSI接口验证启动rsi_alignment_smoke_disabled，driver PID2907230、child PID2910587；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:33:26.764250+08:00 RSI接口验证结束rsi_alignment_smoke_disabled，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_smoke_disabled.log。
+
+- 2026-11-04T12:33:26.773822+08:00 RSI接口验证启动rsi_alignment_legacy_checkpoint_gait，driver PID2907230、child PID2911019；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:34:12.201688+08:00 RSI接口验证结束rsi_alignment_legacy_checkpoint_gait，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_legacy_checkpoint_gait.log。
+
+- 2026-11-04T12:34:12.203552+08:00 RSI接口验证启动rsi_alignment_a1_regression，driver PID2907230、child PID2911777；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:34:36.443955+08:00 RSI接口验证结束rsi_alignment_a1_regression，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_a1_regression.log。
+
+- 2026-11-04T12:34:36.448586+08:00 RSI接口验证启动rsi_alignment_smoke_gait，driver PID2907230、child PID2912224；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:35:18.862050+08:00 RSI接口验证结束rsi_alignment_smoke_gait，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_smoke_gait.log。
+
+- 2026-11-04T12:35:18.864031+08:00 RSI接口验证启动rsi_alignment_smoke_velocity，driver PID2907230、child PID2912908；命令/配置/日志见logs/amp_g1/rsi_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:35:34.014722+08:00 RSI接口验证结束rsi_alignment_smoke_velocity，返回码0，预期拒绝=False，证据logs/amp_g1/rsi_alignment_smoke_velocity.log。
+
+- 2026-11-04T12:35:34.015736+08:00 RSI同帧命令CPU92/真实GPU/默认关闭/显式关闭/严格评估/想象编译梯度/同控制velocity→AMP热启动/四网20→25/旧profile及checkpoint/A1回归/七指令评估接口均完成。短跑不证明walk收敛。
+
+- 2026-11-04T12:38:18+08:00 RSI完整队列2907230已退出且complete/audit passed，CPU92/GPU同帧59参考70普通/默认关闭/CLI20→25→30显式关闭/四网恢复/严格评估/旧actor/A1回归均通过；A1三最终模型完整审计仍converged，旧DC/schema拒绝通过。严格短跑6258个越界采样不代表收益。源码哈希逐一匹配，doc/STATUS/PLAN/正式规范已更新；下一阶段新控制完整更新profiling→随机1000→独立评估，未启动，准备仅提交本项。

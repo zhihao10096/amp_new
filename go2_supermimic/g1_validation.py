@@ -1,6 +1,17 @@
 """Independent G1 walk suites, recorded before formal training."""
 
+import math
+
 from go2_supermimic.validation import _backend_failures, _bounded, _rmse_valid
+
+G1_FALL_DEFINITION = "native_or_height05_tilt60_v1"
+
+
+def evaluation_falls(state, native_termination):
+  """Keep the original zero-fall gate when training termination changes."""
+  locked = (state[:, 0] < .5) | (state[:, 3] > -math.cos(math.radians(60.)))
+  return native_termination | locked
+
 
 G1_FIXED_CASES = (
   ("stand", (0., 0., 0.)), ("forward_slow", (.3, 0., 0.)),
@@ -20,7 +31,8 @@ G1_GAIT_CASES = (
 def g1_velocity_failures(report: dict, noisy: bool = False) -> list[str]:
   failures = _backend_failures(report)
   for key, value in (("robot_kind", "g1"), ("seconds", 30), ("settle_seconds", 1),
-                     ("environments", 96), ("observation_noise", noisy)):
+                     ("environments", 96), ("observation_noise", noisy),
+                     ("fall_definition", G1_FALL_DEFINITION)):
     if report.get(key) != value:
       failures.append(key)
   cases = report.get("fixed", {}).get("cases", {})
@@ -52,7 +64,8 @@ def g1_velocity_failures(report: dict, noisy: bool = False) -> list[str]:
 
 def g1_gait_failures(report: dict, baseline: dict) -> list[str]:
   failures = _backend_failures(report)
-  for key, value in (("robot_kind", "g1"), ("seconds", 20), ("repeats", 8), ("seed", 42)):
+  for key, value in (("robot_kind", "g1"), ("seconds", 20), ("repeats", 8), ("seed", 42),
+                     ("fall_definition", G1_FALL_DEFINITION)):
     if report.get(key) != value:
       failures.append(key)
   if (report.get("style_metric") != "g1_heldout_pairs_v1"

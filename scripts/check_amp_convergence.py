@@ -17,6 +17,16 @@ def read_reports(paths):
   return [report for path in paths for report in json.loads(Path(path).read_text())]
 
 
+def expected_motion_metadata(robot, cfg):
+  if robot == "g1":
+    from go2_supermimic.g1 import DEFAULT_G1_MOTIONS, MotionLibrary as G1MotionLibrary
+    return G1MotionLibrary(
+      DEFAULT_G1_MOTIONS, "cpu", dt=.02,
+      feature_schema=cfg.get("amp_feature_schema", "g1_amp_61_v1"),
+      num_frames=cfg.get("amp_num_frames", 2)).metadata
+  return MotionLibrary(DEFAULT_A1_MOTIONS, "cpu", dt=.02).metadata
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--robot", choices=("a1", "g1"), default="a1")
@@ -28,12 +38,9 @@ def main():
   parser.add_argument("--output", required=True)
   args = parser.parse_args()
   if args.robot == "g1":
-    from go2_supermimic.g1 import DEFAULT_G1_MOTIONS, MotionLibrary as G1MotionLibrary
     from go2_supermimic.g1_validation import g1_convergence_failures
-    motion_class, motion_files = G1MotionLibrary, DEFAULT_G1_MOTIONS
     convergence_check = g1_convergence_failures
   else:
-    motion_class, motion_files = MotionLibrary, DEFAULT_A1_MOTIONS
     convergence_check = a1_convergence_failures
   expected_task = {"a1": "A1-AMP-Flat", "g1": "G1-AMP-Flat"}[args.robot]
   velocity, gait = read_reports(args.benchmarks), read_reports(args.gaits)
@@ -45,7 +52,7 @@ def main():
     velocity, gait, noise[0] if noise else {}, baseline[0] if baseline else {})
   initial_path = Path(args.initial_checkpoint).resolve()
   initial = load_checkpoint(initial_path, "cpu")
-  expected_motion = motion_class(motion_files, "cpu", dt=.02).metadata
+  expected_motion = expected_motion_metadata(args.robot, initial["cfg"])
   if (initial["iteration"] != 0 or initial["cfg"]["resume"]
       or initial.get("robot_kind") != args.robot
       or initial.get("environment_backend") != MANAGER_BACKEND
