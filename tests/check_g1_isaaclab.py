@@ -23,6 +23,7 @@ try:
   import torch
   import go2_supermimic.env
   from go2_supermimic import g1
+  from go2_supermimic.env import mdp
   from go2_supermimic.env.g1_cfg import G1AmpEnvCfg
   from go2_supermimic.supermimic.imagine import ImagineCfg, Imagination
   from go2_supermimic.supermimic.state import robot_state
@@ -31,6 +32,8 @@ try:
   from isaaclab.envs import ManagerBasedRLEnv
   from isaaclab.actuators import ImplicitActuator
   from isaaclab.utils.types import ArticulationActions
+  from isaaclab.managers import SceneEntityCfg
+  import isaaclab.envs.mdp as lab_mdp
 
   torch.set_float32_matmul_precision("highest")
   cfg = G1AmpEnvCfg()
@@ -45,6 +48,22 @@ try:
   cfg.amp_feature_schema = args.amp_feature_schema
   cfg.amp_num_frames = args.amp_num_frames
   env = gym.make("G1-AMP-Flat", cfg=cfg).unwrapped
+  native_checks = 0
+  original_capture = mdp.capture_transition
+  base_sensor = SceneEntityCfg("contact_sensor", body_ids=env.base_contact_sensor_ids)
+
+  def checked_capture(current_env):
+    global native_checks
+    state = original_capture(current_env)
+    contact = lab_mdp.illegal_contact(current_env, 1., base_sensor)
+    torch.testing.assert_close(state[:, g1.BASE_CONTACT].squeeze(-1), contact.float())
+    if cfg.task.termination_profile == g1.TERMINATION_PROFILE:
+      native = contact | lab_mdp.root_height_below_minimum(current_env, .2)
+      torch.testing.assert_close(g1.terminated(state, cfg.task), native)
+    native_checks += 1
+    return state
+
+  mdp.capture_transition = checked_capture
   assert type(env).step is ManagerBasedRLEnv.step
   assert type(env)._reset_idx is ManagerBasedRLEnv._reset_idx
   assert env.robot.joint_names == env.amp_motion.joint_names
@@ -108,14 +127,14 @@ try:
               - native_feet).abs().max().item()
   assert fk_error < 1e-4, fk_error
   obs, _ = env.reset()
-  resets = falls = resamples = timeouts = 0
+  resets = falls = resamples = timeouts = contact_falls = 0
   real_td_max_error = 0.
   native_torque_proxy_difference = native_acceleration_proxy_difference = 0.
   real_anchor = Imagination(ImagineCfg(), cfg.task, env.consts, disc)
   prior_done = torch.ones(32, dtype=torch.bool, device=env.device)
 
   def context_value(x):
-    return (x[:, 0] + x[:, 83] + x[:, -9] + x[:, -8]).unsqueeze(-1)
+    return (x[:, 0] + x[:, g1.STATE_DIM] + x[:, -9] + x[:, -8]).unsqueeze(-1)
 
   for step in range(100):
     weight = (0., .5, .17)[step % 3]
@@ -129,7 +148,7 @@ try:
     env.reward_manager.set_term_cfg("amp_style", term_cfg)
     if step == 10:
       root = env.robot.data.root_state_w[:1].clone()
-      root[:, 2] = .3
+      root[:, 2] = .1
       env.robot.write_root_pose_to_sim(root[:, :7], env_ids=torch.tensor([0], device=env.device))
     previous, commands, remaining = env.actions.clone(), env.commands.clone(), env.command_time.clone()
     history, gait = obs["policy"].clone(), env.gait.clone()
@@ -161,7 +180,7 @@ try:
       actual + .99 * (~term).float() * context_value(following).squeeze(-1))[keep]
     torch.testing.assert_close(targets, expected_target, atol=1e-5, rtol=1e-5)
     real_td_max_error = max(real_td_max_error, (targets - expected_target).abs().max().item())
-    torch.testing.assert_close(real_inputs[:, :83], before[keep])
+    torch.testing.assert_close(real_inputs[:, :g1.STATE_DIM], before[keep])
     done = term | trunc
     if cfg.task.reward_profile == g1.REWARD_PROFILE and (~done).any():
       valid = ~done
@@ -181,9 +200,11 @@ try:
       assert g1.terminated(state, cfg.task)[term].all()
     resets += done.sum().item()
     falls += term.sum().item()
+    contact_falls += (term & (state[:, g1.BASE_CONTACT].squeeze(-1) > .5)).sum().item()
     timeouts += (trunc & ~term).sum().item()
     resamples += ((remaining <= env.step_dt) & ~done).sum().item()
   assert resets > 0 and falls > 0 and resamples > 0 and timeouts > 0
+  assert native_checks > 0 and contact_falls > 0
   env.cfg.amp_reference_reset_fraction = 0.
   env.set_command((.6, 0., 0.))
   obs, _ = env.reset()
@@ -191,10 +212,10 @@ try:
     obs, _, _, _, _ = env.step(torch.zeros(32, 29, device=env.device))
     torch.testing.assert_close(env.commands, env.fixed_command)
   task = replace(cfg.task, observation_noise=False)
-  wm = WorldModel((32,), 83, 29).to(env.device).requires_grad_(False)
+  wm = WorldModel((32,), g1.STATE_DIM, 29).to(env.device).requires_grad_(False)
   wm.net[-1].weight.data.mul_(.001)
   actor = Actor(480, (32,), 29).to(env.device)
-  critic = Critic(124, (32,)).to(env.device).requires_grad_(False)
+  critic = Critic(g1.STATE_DIM + g1.GAIT_DIM + 29 + 4, (32,)).to(env.device).requires_grad_(False)
   seed = {"s": robot_state(env).clone(), "a_prev": env.actions.clone(),
           "obs": obs["policy"].clone(), "commands": env.commands.clone(),
           "command_time": torch.full((32,), 10., device=env.device), "gait": env.gait.clone()}
@@ -218,6 +239,11 @@ try:
   assert torch.isfinite(gradients[0]).all() and gradients[0].abs().sum() > 0
   result = {"passed": True, "robot_kind": "g1", "resets": resets, "falls": falls,
             "actuator_model": g1.ACTUATOR_MODEL,
+            "state_schema": g1.STATE_SCHEMA,
+            "state_dim": g1.STATE_DIM,
+            "termination_profile": cfg.task.termination_profile,
+            "native_termination_oracle_checks": native_checks,
+            "base_contact_falls": contact_falls,
             "reward_profile": cfg.task.reward_profile,
             "amp_command_gate": disc.command_gate,
             "final_task_style_coefficients": g1.amp_reward_coefficients(cfg.task, .5),

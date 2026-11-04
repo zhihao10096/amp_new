@@ -21,7 +21,9 @@ from go2_supermimic.g1_kinematics import (
   KINEMATICS_METADATA, LEG_INDICES, LEG_NAMES, foot_positions)
 
 NUM_JOINTS, NUM_FEET = 29, 2
-STATE_DIM, GAIT_DIM, AMP_DIM = 83, 8, 61
+STATE_DIM, GAIT_DIM, AMP_DIM = 84, 8, 61
+STATE_SCHEMA = "g1_state84_base_contact_v1"
+TERMINATION_PROFILE = "g1_legged_lab_contact_v1"
 DEFAULT_AMP_FEATURE_SCHEMA = "g1_amp_61_v1"
 AMP_FEATURE_DIMS = {
   DEFAULT_AMP_FEATURE_SCHEMA: 61,
@@ -38,6 +40,7 @@ Z, GRAV, V_B, W_B = slice(0, 1), slice(1, 4), slice(4, 7), slice(7, 10)
 Q, QD = slice(10, 39), slice(39, 68)
 FOOT_POS, FOOT_VEL = slice(68, 74), slice(74, 80)
 CONTACT, UNDESIRED_CONTACT = slice(80, 82), slice(82, 83)
+BASE_CONTACT = slice(83, 84)
 AIR, STANCE, LAST_AIR, LAST_STANCE = slice(0, 2), slice(2, 4), slice(4, 6), slice(6, 8)
 OBS_TERMS = (("angular_velocity", 3), ("gravity", 3), ("command", 3),
              ("joint_position", 29), ("joint_velocity", 29), ("action", 29))
@@ -54,7 +57,6 @@ WAIST_IDS = (2, 5, 8)
 ARM_IDS = tuple(i for i in range(NUM_JOINTS) if i not in LEG_JOINT_IDS + WAIST_IDS)
 CommandCfg, VelocityTaskCfg, RobotConsts = quad.CommandCfg, quad.VelocityTaskCfg, quad.RobotConsts
 sample_commands, advance_commands = quad.sample_commands, quad.advance_commands
-terminated, termination_probability = quad.terminated, quad.termination_probability
 
 
 @dataclass
@@ -116,6 +118,35 @@ def require_implicit_pd(checkpoint: dict) -> None:
       "or evaluated as implicit PD.")
 
 
+def require_trainable_state(checkpoint: dict) -> None:
+  """Actor evaluation can read old states; learned dynamics cannot be padded."""
+  require_implicit_pd(checkpoint)
+  if (checkpoint.get("state_schema") != STATE_SCHEMA
+      or checkpoint["world_model"]["out_norm.mean"].numel() != STATE_DIM):
+    raise ValueError(
+      f"G1 training requires {STATE_SCHEMA}; old 83-dimensional dynamics have no "
+      "base-contact channel. Start a fresh run instead of padding the world model.")
+
+
+def terminated(s: torch.Tensor, cfg: VelocityTaskCfg) -> torch.Tensor:
+  if cfg.termination_profile == "height_tilt":
+    return quad.terminated(s, cfg)
+  if cfg.termination_profile != TERMINATION_PROFILE:
+    raise ValueError(f"unsupported G1 termination profile: {cfg.termination_profile}")
+  return (s[:, 0] < cfg.minimum_height) | (s[:, BASE_CONTACT].squeeze(-1) > .5)
+
+
+def termination_probability(s: torch.Tensor, cfg: VelocityTaskCfg) -> torch.Tensor:
+  """Smooth union using the same height/contact inputs as native termination."""
+  if cfg.termination_profile == "height_tilt":
+    return quad.termination_probability(s, cfg)
+  if cfg.termination_profile != TERMINATION_PROFILE:
+    raise ValueError(f"unsupported G1 termination profile: {cfg.termination_profile}")
+  low = torch.sigmoid((cfg.minimum_height - s[:, 0]) / .015)
+  contact = torch.sigmoid((s[:, BASE_CONTACT].squeeze(-1) - .5) / .04)
+  return 1 - (1 - low) * (1 - contact)
+
+
 def legacy_walk_task() -> VelocityTaskCfg:
   return VelocityTaskCfg(
     reward_profile="g1_walk", action_scale=.25, nominal_height=.78, minimum_height=.5,
@@ -134,6 +165,7 @@ def legacy_walk_task() -> VelocityTaskCfg:
 def walk_task() -> VelocityTaskCfg:
   """The 16 upstream task terms, restricted to this project's flat walk range."""
   return replace(legacy_walk_task(), reward_profile=REWARD_PROFILE,
+                 termination_profile=TERMINATION_PROFILE, minimum_height=.2,
                  rewards=LeggedLabRewardWeights())
 
 

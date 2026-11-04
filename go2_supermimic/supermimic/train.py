@@ -224,7 +224,8 @@ class Trainer:
       {"train": asdict(cfg), "task": asdict(env.cfg.task), "dt": env.step_dt,
        "environment_backend": env.environment_backend,
        "robot_kind": env.robot_kind,
-       **({"actuator_model": api.ACTUATOR_MODEL} if env.robot_kind == "g1" else {}),
+       **({"actuator_model": api.ACTUATOR_MODEL, "state_schema": api.STATE_SCHEMA}
+          if env.robot_kind == "g1" else {}),
        "amp_motion_metadata": env.amp_motion.metadata if self.amp is not None else None,
        "training_origin": self.training_origin}, indent=2) + "\n")
     self.writer = SummaryWriter(str(self.log_dir))
@@ -262,8 +263,8 @@ class Trainer:
     if ckpt.get("robot_kind", "go2") != getattr(self.env, "robot_kind", "go2"):
       raise ValueError("resume requires the same robot; use warm-start for transfer")
     if ckpt.get("robot_kind") == "g1":
-      from go2_supermimic.g1 import require_implicit_pd
-      require_implicit_pd(ckpt)
+      from go2_supermimic.g1 import require_trainable_state
+      require_trainable_state(ckpt)
     self.training_origin = ckpt.get("training_origin", {
       "kind": "imported_checkpoint", "checkpoint": str(Path(path).resolve()),
       "environment_backend": ckpt.get("environment_backend", "legacy_direct")})
@@ -295,8 +296,8 @@ class Trainer:
     ckpt = load_checkpoint(path, self.device)
     if ckpt.get("robot_kind") == "g1" or getattr(
         getattr(self, "env", None), "robot_kind", None) == "g1":
-      from go2_supermimic.g1 import require_implicit_pd
-      require_implicit_pd(ckpt)
+      from go2_supermimic.g1 import require_trainable_state
+      require_trainable_state(ckpt)
     self.training_origin = {
       "kind": "warm_start", "checkpoint": str(Path(path).resolve()),
       "environment_backend": ckpt.get("environment_backend", "legacy_direct")}
@@ -476,8 +477,9 @@ class Trainer:
                      amp_motion_metadata=self.env.amp_motion.metadata,
                      amp_reward_fraction=self.amp_fraction)
     if self.env.robot_kind == "g1":
-      from go2_supermimic.g1 import ACTUATOR_MODEL
+      from go2_supermimic.g1 import ACTUATOR_MODEL, STATE_SCHEMA
       payload["actuator_model"] = ACTUATOR_MODEL
+      payload["state_schema"] = STATE_SCHEMA
     torch.save(payload, temporary)
     temporary.replace(path)
     print(f"Saved {path}", flush=True)

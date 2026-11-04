@@ -59,7 +59,7 @@ def test_features_match_expert_and_amp_preserves_state_gradient():
   library = g1.MotionLibrary()
   f = library.sample_frames(32)
   default = torch.randn(29)
-  s = torch.zeros(32, 83)
+  s = torch.zeros(32, g1.STATE_DIM)
   s[:, g1.Q], s[:, g1.QD] = f[:, 7:36] - default, f[:, 42:71]
   s[:, g1.W_B] = g1.quat_inverse_apply(f[:, [6, 3, 4, 5]], f[:, 39:42])
   torch.testing.assert_close(g1.state_features(s, default), g1.frame_features(f))
@@ -75,7 +75,7 @@ def test_velocity_feature_schema_matches_expert_and_changes_dimension():
   library = g1.MotionLibrary(feature_schema="g1_amp_64_velocity_v1")
   f = library.sample_frames(32)
   default = torch.randn(29)
-  s = torch.zeros(32, 83)
+  s = torch.zeros(32, g1.STATE_DIM)
   s[:, g1.Q], s[:, g1.QD] = f[:, 7:36] - default, f[:, 42:71]
   s[:, g1.V_B] = g1.quat_inverse_apply(f[:, [6, 3, 4, 5]], f[:, 36:39])
   s[:, g1.W_B] = g1.quat_inverse_apply(f[:, [6, 3, 4, 5]], f[:, 39:42])
@@ -95,12 +95,13 @@ def test_g1_replay_imagination_and_task_roundtrip():
   c = g1.RobotConsts(
     torch.zeros(29), torch.tensor([[-3., 3.]]).expand(29, -1),
     torch.full((29,), 40.), torch.ones(29), torch.full((29,), 25.), torch.full((29,), 37.))
-  wm = WorldModel((16,), 83, 29).requires_grad_(False)
+  wm = WorldModel((16,), g1.STATE_DIM, 29).requires_grad_(False)
   wm.net[-1].weight.data.mul_(.001)
-  actor, critic = Actor(192, (16,), 29), Critic(124, (16,)).requires_grad_(False)
-  s = torch.zeros(8, 83)
+  critic_dim = g1.STATE_DIM + g1.GAIT_DIM + g1.NUM_JOINTS + 4
+  actor, critic = Actor(192, (16,), 29), Critic(critic_dim, (16,)).requires_grad_(False)
+  s = torch.zeros(8, g1.STATE_DIM)
   s[:, 0], s[:, 3], s[:, g1.CONTACT] = .78, -1., 1.
-  buf = ReplayBuffer(8, 8, 192, "cpu", 83, 29, 8)
+  buf = ReplayBuffer(8, 8, 192, "cpu", g1.STATE_DIM, 29, 8)
   buf.add(s, s, torch.zeros(8, 29), torch.zeros(8, 29), torch.randn(8, 192),
           torch.ones(8, 3) * .2, torch.full((8,), 10.), torch.zeros(8, dtype=torch.bool),
           torch.zeros(8, 8))
@@ -108,7 +109,7 @@ def test_g1_replay_imagination_and_task_roundtrip():
   imag.set_amp_weight(.5)
   objective, data = imag.rollout(wm, actor, critic, buf.sample_states(8))
   (-objective.mean()).backward()
-  assert data["critic_in"].shape == (8, 4, 124)
+  assert data["critic_in"].shape == (8, 4, critic_dim)
   assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in actor.net.parameters())
   assert sum(p.grad.abs().sum() for p in actor.net.parameters()) > 0
   assert torch.isfinite(imag.gae_targets(critic, data)).all()

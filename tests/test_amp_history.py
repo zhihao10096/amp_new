@@ -122,13 +122,14 @@ def test_four_frame_imagination_compile_preserves_amp_only_actor_gradient(
   consts = g1.RobotConsts(
     torch.zeros(29), torch.tensor([[-3., 3.]]).expand(29, -1), torch.full((29,), 40.),
     torch.ones(29), torch.full((29,), 25.), torch.full((29,), 37.))
-  wm = WorldModel((16,), 83, 29).requires_grad_(False)
+  wm = WorldModel((16,), g1.STATE_DIM, 29).requires_grad_(False)
   wm.out_norm.var.fill_(1e-4)
-  actor, critic = Actor(192, (16,), 29), Critic(124, (16,)).requires_grad_(False)
+  critic_dim = g1.STATE_DIM + g1.GAIT_DIM + g1.NUM_JOINTS + 4
+  actor, critic = Actor(192, (16,), 29), Critic(critic_dim, (16,)).requires_grad_(False)
   for p in critic.parameters():
     p.zero_()
   disc = g1.AMPDiscriminator((16,), "g1_amp_70_feet_v1", 4).requires_grad_(False)
-  state = torch.zeros(4, 83)
+  state = torch.zeros(4, g1.STATE_DIM)
   state[:, 0], state[:, 3], state[:, g1.CONTACT] = .78, -1., 1.
   seed = {"s": state, "a_prev": torch.zeros(4, 29), "obs": torch.randn(4, 192),
           "commands": torch.ones(4, 3) * .2, "command_time": torch.full((4,), 10.),

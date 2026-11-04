@@ -85,6 +85,7 @@ REWARD_INDEX = {name: index for index, name in enumerate(REWARD_NAMES)}
 @dataclass
 class VelocityTaskCfg:
   reward_profile: str = "unitree_gait"
+  termination_profile: str = "height_tilt"
   history: int = 5
   action_scale: float = 0.25
   action_clip: float = 4.0

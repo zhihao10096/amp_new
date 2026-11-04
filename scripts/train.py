@@ -48,11 +48,11 @@ def main():
     parser.error("available tasks: Go2-Velocity-Flat, A1-AMP-Flat, "
                  "G1-AMP-Flat, G1-Velocity-Flat")
   if cfg.task.startswith("G1-") and (cfg.resume or cfg.warm_start):
-    from go2_supermimic.g1 import require_implicit_pd
+    from go2_supermimic.g1 import require_trainable_state
     from go2_supermimic.supermimic.train import load_checkpoint
     source = (resume_checkpoint if resume_checkpoint is not None
               else load_checkpoint(cfg.warm_start, "cpu"))
-    require_implicit_pd(source)
+    require_trainable_state(source)
   launcher = AppLauncher(args)
   env = None
   try:

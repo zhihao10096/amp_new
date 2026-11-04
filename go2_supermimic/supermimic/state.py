@@ -18,12 +18,15 @@ def robot_state(env) -> torch.Tensor:
   forces = env.contact_sensor.data.net_forces_w_history.norm(dim=-1).amax(dim=1)
   contact = (forces[:, env.foot_sensor_ids] > 1).float()
   undesired = (forces[:, env.undesired_sensor_ids] > 1).float().sum(-1, keepdim=True)
-  return torch.cat([
+  parts = [
     d.root_pos_w[:, 2:3] - env.scene.env_origins[:, 2:3],
     d.projected_gravity_b, d.root_lin_vel_b, d.root_ang_vel_b,
     d.joint_pos - d.default_joint_pos, d.joint_vel,
     foot_pos, foot_vel, contact, undesired,
-  ], -1)
+  ]
+  if env.robot_kind == "g1":
+    parts.append((forces[:, env.base_contact_sensor_ids] > 1).any(-1, keepdim=True).float())
+  return torch.cat(parts, -1)
 
 
 def robot_consts(env) -> RobotConsts:

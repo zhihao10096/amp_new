@@ -57,9 +57,12 @@ def main():
   source = initial.get("training_origin", {})
   if args.robot == "g1":
     from dataclasses import asdict
-    from go2_supermimic.g1 import ACTUATOR_MODEL, walk_task
+    from go2_supermimic.g1 import ACTUATOR_MODEL, STATE_SCHEMA, STATE_DIM, walk_task
     if initial.get("actuator_model") != ACTUATOR_MODEL:
       failures.append("g1_initial_actuator_model")
+    if (initial.get("state_schema") != STATE_SCHEMA
+        or initial["world_model"]["out_norm.mean"].numel() != STATE_DIM):
+      failures.append("g1_initial_state_schema")
     if (source.get("kind") != "random_initialization" or initial["cfg"].get("warm_start")
         or initial["task_cfg"] != asdict(walk_task()) or initial.get("obs_dim") != 480):
       failures.append("g1_formal_initial_task_or_random_origin")
@@ -82,6 +85,10 @@ def main():
     checkpoint = load_checkpoint(path, "cpu")
     if args.robot == "g1" and checkpoint.get("actuator_model") != ACTUATOR_MODEL:
       failures.append(f"{path.name}/actuator_model")
+    if args.robot == "g1" and (
+        checkpoint.get("state_schema") != STATE_SCHEMA
+        or checkpoint["world_model"]["out_norm.mean"].numel() != STATE_DIM):
+      failures.append(f"{path.name}/state_schema")
     if (checkpoint.get("robot_kind") != args.robot
         or checkpoint.get("environment_backend") != MANAGER_BACKEND
         or checkpoint["cfg"]["task"] != expected_task

@@ -346,3 +346,63 @@
 - 2026-11-04T12:05:55.626945+08:00 上游16项奖励/AMP混合CPU82/oracle/原生GPU/想象编译梯度/同控制velocity→AMP热启动/四网20→25/旧profile及checkpoint/A1回归/七指令评估接口均完成。短跑不证明walk收敛。
 
 - 2026-11-04T12:07:53+08:00 恢复后核实原pipeline2883115已complete且所有子进程退出，未重复启动。上游16项奖励对齐CPU82/oracle512样本/真实GPU编译/四网20→25/旧profile及checkpoint/A1回归全部passed，source SHA256与受测源码一致。真实TD4.77e-7、编译返回3.58e-7/梯度1.46e-11；末子步力矩/加速度代理差异已量化，25轮829摔只属接口测试。保留隐式PD，IdealPD为备选，无新长训。STATUS重写、旧状态已快照、doc/G1_LEGGED_LAB_REWARD_ALIGNMENT_2026-11-04.md补齐结论，准备仅提交本项。
+
+- 2026-11-04T12:08:44+08:00 本项完成：提交29b18758e16f33b31f071bcb0f55c347e50f7640（20个相关文件），CPU82/上游16项oracle/真实GPU编译与四网保存恢复/历史profile及checkpoint/A1回归通过。新代码与pipeline受测SHA256逐一一致，7份G1动作Git/SHA256复核通过；未提交reference/日志/模型/无关改动。当前无本项目GPU作业，隐式PD保留，IdealPD备选，无新收敛结论。STATUS已写准确HEAD，下一步终止/RSI接口核对。
+
+- 2026-11-04T12:09:31+08:00 交付完成：本项doc同步本地主机doc/且SHA256一致；本地700×240屏幕中央弹窗已实际显示（artifacts/g1_upstream_reward_completion_notice.json，mapped=true）。代码提交29b1875，交接记录已更新至该HEAD；GPU最终1MiB/0%、无计算进程，无新训练。
+
+- 2026-11-04T12:12:20+08:00 继续主目标，核实HEAD29b1875、上一轮完整验证complete且GPU无进程。新问题：83维状态只有手臂接触计数，缺少上游torso/pelvis接触终止输入；真实单改height/tilt会与想象不一致。决定增加独立base-contact标量（G1状态84维、critic125维、actor/AMP不变），新walk终止用height<.2或躯干接触，不再倾角终止；旧profile判定和actor评估保留，旧83维WM拒绝继续训练。先仅做终止接口并验证/提交，再独立RSI，不启动权重网格。GitHub四份固定源码与本地逐字一致：logs/amp_g1/g1_boundary_github_evidence.json。
+
+- 2026-11-04T12:16:03+08:00 终止接口CPU首轮86过2失败：四帧编译测试夹具仍用83/124维，新增软终止断言漏算0.3m高度sigmoid尾部；均为测试输入/断言问题，已按84/125维与既定.015m软宽修正，不改生产公式。原日志contact_termination_cpu.log保留，r2日志contact_termination_cpu_r2.log（logs/amp_g1），无GPU作业/训练启动。
+
+- 2026-11-04T12:16:52+08:00 终止接口CPU88全部通过；真实GPU验证driver PID2896001已启动，状态logs/amp_g1/contact_termination_validation.pipeline.json。覆盖84维/上游终止oracle/真实碰地/想象编译、旧83维训练拒绝、四网保存恢复、历史actor及A1回归；仅接口验证，勿重复启动，未启动正式训练。
+
+- 2026-11-04T12:18:12+08:00 验证driver2896001在源码hash清单阶段因脚本模板错误文件名退出，已核实PID不存在/无pipeline状态文件/未启动GPU子作业；修复清单并逐路径检查后启动driver2896882，使用同队列contact_termination_validation.pipeline.json，旧driver日志保留.driver.log，新driver_r2.log。CPU88证据仍有效，生产代码未改。
+
+- 2026-11-04T12:18:13.408423+08:00 终止接口验证启动contact_termination_reject83_resume，driver PID2896882、child PID2897005；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:18:16.441768+08:00 终止接口验证结束contact_termination_reject83_resume，返回码1，预期拒绝=True，证据logs/amp_g1/contact_termination_reject83_resume.log。
+
+- 2026-11-04T12:18:16.448824+08:00 终止接口验证启动contact_termination_reject83_warm-start，driver PID2896882、child PID2897032；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:18:19.483249+08:00 终止接口验证结束contact_termination_reject83_warm-start，返回码1，预期拒绝=True，证据logs/amp_g1/contact_termination_reject83_warm-start.log。
+
+- 2026-11-04T12:18:19.487175+08:00 终止接口验证启动contact_termination_integration，driver PID2896882、child PID2897093；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:19:04.949554+08:00 终止接口验证结束contact_termination_integration，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_integration.log。
+
+- 2026-11-04T12:19:04.957795+08:00 终止接口验证启动contact_termination_legacy_integration，driver PID2896882、child PID2898199；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:19:44.342787+08:00 终止接口验证结束contact_termination_legacy_integration，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_legacy_integration.log。
+
+- 2026-11-04T12:19:44.344486+08:00 终止接口验证启动contact_termination_velocity_smoke，driver PID2896882、child PID2899088；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:19:47+08:00 84维终止原生GPU/编译passed：1851次与Lab原生height/illegal_contact判定一致，1次实际躯干碰地终止、65reset/6摔倒/59超时；编译返回max5.96e-8/actor梯度3.73e-9。driver2896882继续旧profile/四网保存恢复/历史actor及A1回归；未启动正式训练。证据logs/amp_g1/contact_termination_integration.json。
+
+- 2026-11-04T12:20:20.688944+08:00 终止接口验证结束contact_termination_velocity_smoke，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_velocity_smoke.log。
+
+- 2026-11-04T12:20:20.694825+08:00 终止接口验证启动contact_termination_smoke_initial，driver PID2896882、child PID2899857；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:21:06.137164+08:00 终止接口验证结束contact_termination_smoke_initial，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_smoke_initial.log。
+
+- 2026-11-04T12:21:06.161532+08:00 终止接口验证启动contact_termination_smoke_resume，driver PID2896882、child PID2900695；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:21:25+08:00 下一阶段RSI接口审计：执行本机Lab2.1的原始CommandTerm.reset/_resample方法，回调实际counter为1（重置）/2（定时），确认直接复制上游counter==0会失效。证据logs/amp_g1/g1_rsi_counter_oracle.json；计划以重置事件写同帧命令和一次性pending标记，固定命令优先，仅参考重置对齐，普通/回合中仍随机；默认关闭，另列上游heading控制差异，不混改终止验证源码。
+
+- 2026-11-04T12:21:27.366242+08:00 终止接口验证结束contact_termination_smoke_resume，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_smoke_resume.log。
+
+- 2026-11-04T12:21:27.374565+08:00 终止接口验证启动contact_termination_legacy_checkpoint_gait，driver PID2896882、child PID2901105；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:22:09.805059+08:00 终止接口验证结束contact_termination_legacy_checkpoint_gait，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_legacy_checkpoint_gait.log。
+
+- 2026-11-04T12:22:09.810339+08:00 终止接口验证启动contact_termination_a1_regression，driver PID2896882、child PID2901780；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:22:31.051481+08:00 终止接口验证结束contact_termination_a1_regression，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_a1_regression.log。
+
+- 2026-11-04T12:22:31.053374+08:00 终止接口验证启动contact_termination_smoke_gait，driver PID2896882、child PID2902177；命令/配置/日志见logs/amp_g1/contact_termination_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T12:23:13.469970+08:00 终止接口验证结束contact_termination_smoke_gait，返回码0，预期拒绝=False，证据logs/amp_g1/contact_termination_smoke_gait.log。
+
+- 2026-11-04T12:23:13.472272+08:00 终止84维CPU88/上游原生终止/想象编译梯度/同控制velocity→AMP热启动/四网20→25/旧profile及checkpoint/A1回归/七指令评估接口均完成。短跑不证明walk收敛。
+
+- 2026-11-04T12:25:38+08:00 84维终止接口完整验证结束，driver2896882退出，pipeline complete/audit passed；CPU88、原生终止1851次oracle、四网20→25/CLI恢复、旧83维WM拒绝/旧actor评估/A1回归全部通过。短跑737摔仍不代表收敛，source哈希与受测源码一致。doc/G1_TERMINATION_ALIGNMENT_2026-11-04.md补齐结果，STATUS已快照并更新最新checkpoint/配置，准备单独提交；RSI仅本地独立副本准备，未改本次受测源码。

@@ -31,6 +31,9 @@ class Go2VelocityEnv(ManagerBasedRLEnv):
     self.foot_sensor_ids, _ = self.contact_sensor.find_bodies(foot_names, preserve_order=True)
     self.undesired_sensor_ids, _ = self.contact_sensor.find_bodies(
       list(self.cfg.undesired_contact_patterns))
+    if self.robot_kind == "g1":
+      self.base_contact_sensor_ids, _ = self.contact_sensor.find_bodies(
+        ["torso_link", "pelvis"], preserve_order=True)
     self.consts = robot_consts(self)
     self.amp_discriminator = None
     if self.cfg.amp_enabled and self.cfg.amp_motion_files:
