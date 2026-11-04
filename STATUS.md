@@ -1,11 +1,15 @@
 # 当前状态与恢复入口
 
-本轮最终核实：2026-11-04T10:33:32；GPU 1 MiB, 0 %，无计算进程。
+## 本轮文档交付
+
+- 2026-11-04T10:44:53+08:00 用户要求的G1 AMP全程问题/方案/效果报告已完成，入口[doc/G1_AMP_ISSUES_AND_SOLUTIONS_2026-11-04.md](doc/G1_AMP_ISSUES_AND_SOLUTIONS_2026-11-04.md)，docs/experiments同名报告同步；本地doc/与artifacts/有交付副本。61条路径、12行/60项指标、7份动作Git/SHA256核验通过，审计logs/amp_g1/g1_issues_review_20261104.audit.json。本轮无新训练；RSI对齐仍未实现。报告/交接文档待提交，源码基线45712b3。
+
+本轮最终核实：2026-11-04T10:45:25+08:00；GPU 1 MiB, 0 %，无计算进程。
 
 历史核实时间：2026-11-04T10:23:12。权威项目目录`/pfs/user/learning/amp_new`；SSH `ssh -p 9205 root@118.196.87.69`。恢复先读GOAL/PLAN/PROGRESS，再查ps/GPU及pipeline，勿重复启动。旧记录见docs/history/STATUS_2026-11-04_before_history4_training.md。
 
 ## 版本、范围与当前阶段
-- 当前HEAD `5f8c17e2e260296bccb7c9cdd1834dc3b72978d2`；四帧AMP实现与验证已完成并提交。默认两帧兼容；其他既有未提交文件以git status为准，保留reference及exploration/dynamics诊断文件。
+- 当前HEAD `45712b312f0c09a01af186b037fa43ab2a385538`（四帧结果与下一假设归档）；已验证实现提交5f8c17e。默认两帧兼容；其他既有未提交文件以git status为准，保留reference及exploration/dynamics诊断文件。
 - Manager与A1 AMP已独立完成；G1 walk仍未成功。G1只平地/walk/29DOF，SuperMimic世界模型与可微想象，全程禁PPO；G1全部标准通过后才进入X1下半身12DOF，RKNN不在X1范围。
 - 七份G1实际动作在Git管理assets/motions/g1/，80%训练/20%留出；新增/替换先复制/追踪/SHA256及来源许可归档。X1动作的忽略规则仅对X1生效。
 
@@ -36,7 +40,7 @@
 - 全套速度/三连续点/加噪/录像/实际模型审计仍未通过；G1/X1总目标保持未完成。
 
 ## 文档与下一条执行命令
-每项工作在doc/保存解决思路；本轮doc/G1_AMP_TEMPORAL_HISTORY_2026-11-04.md。全程问题报告docs/experiments/G1_AMP_ISSUES_AND_SOLUTIONS_2026-11-04.md与四臂对照保留历史截止事实。
+每项工作在doc/保存解决思路；本轮doc/G1_AMP_TEMPORAL_HISTORY_2026-11-04.md。全程问题报告doc/G1_AMP_ISSUES_AND_SOLUTIONS_2026-11-04.md已更新至四帧负结果，docs/experiments同名报告同步；四臂对照保留其历史截止事实。
 
 ```bash
 cd /pfs/user/learning/amp_new
