@@ -17,6 +17,8 @@ import torch
 from go2_supermimic import velocity as quad
 from go2_supermimic.amp import AMPDiscriminator as PairDiscriminator
 from go2_supermimic.amp import MotionLibrary as PairMotionLibrary
+from go2_supermimic.g1_discriminator import LeggedLabNorm
+from go2_supermimic.supermimic.world_model import mlp
 from go2_supermimic.g1_kinematics import (
   KINEMATICS_METADATA, LEG_INDICES, LEG_NAMES, foot_positions)
 
@@ -413,13 +415,50 @@ def frame_features(f: torch.Tensor,
 class AMPDiscriminator(PairDiscriminator):
   def __init__(self, hidden: tuple[int, ...] = (512, 256),
                feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA, num_frames: int = 2,
-               command_gate: bool = True):
+               command_gate: bool = True, profile: str = "legacy"):
+    if profile not in ("legacy", "legged_lab_v1"):
+      raise ValueError(f"unknown G1 discriminator profile: {profile}")
     self.feature_schema = feature_schema
+    self.profile = profile
     super().__init__(hidden, feature_dim=amp_feature_dim(feature_schema),
                      num_frames=num_frames, command_gate=command_gate)
+    if profile == "legged_lab_v1":
+      self.norm = LeggedLabNorm(amp_feature_dim(feature_schema))
+      self.net = mlp(num_frames * amp_feature_dim(feature_schema), hidden, 1,
+                     act=torch.nn.ELU)
 
   def features(self, state: torch.Tensor, default_q: torch.Tensor) -> torch.Tensor:
     return state_features(state, default_q, self.feature_schema)
+
+  def optimizer_groups(self) -> list[dict]:
+    if self.profile == "legacy":
+      return [{"params": self.parameters(), "weight_decay": 1e-4}]
+    return [{"params": self.net[:-1].parameters(), "weight_decay": 1e-4},
+            {"params": self.net[-1].parameters(), "weight_decay": .1}]
+
+  def loss(self, expert: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
+           policy: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
+           penalty: float = 10.) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    if self.profile == "legacy":
+      return super().loss(expert, policy, penalty)
+    if isinstance(expert, tuple):
+      expert, policy = torch.stack(expert, 1), torch.stack(policy, 1)
+    if (expert.ndim != 3 or expert.shape[1:] != policy.shape[1:]
+        or expert.shape[1] != self.num_frames):
+      raise ValueError("invalid AMP expert/policy temporal sequences")
+    positive = self.norm(expert).flatten(1).detach().requires_grad_()
+    expert_score = self.net(positive).squeeze(-1)
+    policy_score = self.sequence_score(policy.detach())
+    return self._score_loss(positive, expert_score, policy_score, penalty)
+
+  @torch.no_grad()
+  def update_normalization(self, policy: tuple[torch.Tensor, torch.Tensor] | torch.Tensor) -> None:
+    # The legacy loss already updates joint expert/policy moments. The upstream
+    # profile updates policy-only moments after the optimizer step.
+    if self.profile == "legged_lab_v1":
+      if isinstance(policy, tuple):
+        policy = torch.stack(policy, 1)
+      self.norm.update(policy.flatten(0, 1))
 
 
 class MotionLibrary(PairMotionLibrary):

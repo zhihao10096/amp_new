@@ -76,6 +76,8 @@ class TrainCfg:
   amp_feature_schema: str = "g1_amp_61_v1"
   amp_num_frames: int = 2
   """Chronological discriminator frames; four-frame support is G1-only."""
+  amp_discriminator_profile: str = "legacy"
+  """G1 discriminator implementation; old checkpoints and A1 retain legacy."""
   amp_hidden: tuple[int, ...] = (512, 256)
   amp_weight: float = .5
   amp_lr: float = 1e-4
@@ -121,6 +123,9 @@ class TrainCfg:
       raise ValueError("invalid AMP reward, learning rate, penalty or reset fraction")
     if self.amp_reset_command_alignment and self.task != "G1-AMP-Flat":
       raise ValueError("amp_reset_command_alignment requires G1-AMP-Flat")
+    if (self.amp_discriminator_profile not in ("legacy", "legged_lab_v1")
+        or (self.amp_discriminator_profile != "legacy" and self.task != "G1-AMP-Flat")):
+      raise ValueError("legged_lab_v1 discriminator requires G1-AMP-Flat")
 
 
 class Actor(nn.Module):
@@ -192,12 +197,15 @@ class Trainer:
       if env.robot_kind == "g1":
         self.amp = amp_api(env.robot_kind).AMPDiscriminator(
           cfg.amp_hidden, cfg.amp_feature_schema, cfg.amp_num_frames,
-          command_gate=env.cfg.task.reward_profile != "g1_legged_lab_walk_v1").to(self.device)
+          command_gate=env.cfg.task.reward_profile != "g1_legged_lab_walk_v1",
+          profile=cfg.amp_discriminator_profile).to(self.device)
       else:
         self.amp = amp_api(env.robot_kind).AMPDiscriminator(cfg.amp_hidden).to(self.device)
     else:
       self.amp = None
-    self.opt_amp = (torch.optim.Adam(self.amp.parameters(), lr=cfg.amp_lr, weight_decay=1e-4)
+    amp_parameters = (self.amp.optimizer_groups() if env.robot_kind == "g1" and self.amp is not None
+                      else self.amp.parameters() if self.amp is not None else None)
+    self.opt_amp = (torch.optim.Adam(amp_parameters, lr=cfg.amp_lr, weight_decay=1e-4)
                     if self.amp is not None else None)
     self.env.amp_discriminator = self.amp
     self.buf = ReplayBuffer(cfg.num_envs, cfg.buffer_len, self.obs.shape[-1], self.device,
@@ -274,6 +282,10 @@ class Trainer:
       "environment_backend": ckpt.get("environment_backend", "legacy_direct")})
     if ckpt["format"] != CHECKPOINT_FORMAT:
       raise ValueError("use --warm-start to migrate a v1 model to the contact-aware dynamics")
+    if (getattr(self, "amp", None) is not None and self.env.robot_kind == "g1"
+        and ckpt["cfg"].get("amp_discriminator_profile", "legacy")
+            != self.cfg.amp_discriminator_profile):
+      raise ValueError("AMP resume requires the same discriminator profile; use a fresh run")
     if (asdict(task_from_dict(ckpt["task_cfg"])) != asdict(self.env.cfg.task)
         or ckpt["dt"] != self.env.step_dt):
       raise ValueError("checkpoint task settings differ from the current environment")
@@ -414,6 +426,8 @@ class Trainer:
             expert = self.env.amp_motion.sample_pairs(self.cfg.amp_batch, train=True)
       loss, values = self.amp.loss(expert, policy, self.cfg.amp_grad_penalty)
       self._update(loss, self.amp, self.opt_amp)
+      if self.env.robot_kind == "g1":
+        self.amp.update_normalization(policy)
       values["amp_loss"] = loss.detach()
       for key, value in values.items():
         metrics[key] = metrics.get(key, 0.) + value.item() / self.cfg.amp_updates

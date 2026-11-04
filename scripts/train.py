@@ -43,6 +43,13 @@ def main():
   if values["task"] == "G1-AMP-Flat" and not values["amp_motion_files"]:
     from go2_supermimic.g1 import DEFAULT_G1_MOTIONS
     values["amp_motion_files"] = DEFAULT_G1_MOTIONS
+  if values["task"] == "G1-AMP-Flat" and not args.resume:
+    supplied = {x.split("=", 1)[0] for x in sys.argv[1:]}
+    if "--amp-discriminator-profile" not in supplied:
+      values["amp_discriminator_profile"] = "legged_lab_v1"
+    if (values["amp_discriminator_profile"] == "legged_lab_v1"
+        and "--amp-hidden" not in supplied):
+      values["amp_hidden"] = (1024, 512)
   cfg = TrainCfg(**values)
   if cfg.task not in ("Go2-Velocity-Flat", "A1-AMP-Flat", "G1-AMP-Flat",
                       "G1-Velocity-Flat"):
@@ -54,6 +61,9 @@ def main():
     source = (resume_checkpoint if resume_checkpoint is not None
               else load_checkpoint(cfg.warm_start, "cpu"))
     require_trainable_state(source)
+    if (cfg.resume and cfg.amp_discriminator_profile
+        != source["cfg"].get("amp_discriminator_profile", "legacy")):
+      parser.error("AMP resume requires the same discriminator profile; use a fresh run")
   launcher = AppLauncher(args)
   env = None
   try:

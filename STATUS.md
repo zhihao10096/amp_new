@@ -1,11 +1,11 @@
 # 当前状态与恢复入口
 
-核实时间：2026-11-04T13:54:29+08:00。权威目录 `/pfs/user/learning/amp_new`；SSH `ssh -p 9205 root@118.196.87.69`。
+核实时间：2026-11-04T14:28:59+08:00。权威目录 `/pfs/user/learning/amp_new`；SSH `ssh -p 9205 root@118.196.87.69`。
 恢复先读 GOAL / PLAN / 本文件，再核实 HEAD、pipeline、实际 PID / GPU，避免重复启动。
 
 ## 版本、范围与控制决定
 
-- 当前 HEAD `8e1a29e70dd91bb54e6ae64ac6a4ae48a8130834`；本次受测训练内核 `20ad0d3a2490b0c2771b6c8d0b8748674832e0cf`，23 份训练相关源码 SHA256 与续训 pipeline 一致。HEAD 的文档及诊断工具不改变训练内核。
+- 当前 HEAD `cddcbde66235e12d1a0ac33c477ab11485745768`；本次受测训练内核 `20ad0d3a2490b0c2771b6c8d0b8748674832e0cf`，23 份训练相关源码 SHA256 与续训 pipeline 一致。HEAD 的文档及诊断工具不改变训练内核。
 - Manager / A1 已独立完成；G1 仅 29DOF / 平地 / walk，沿用 SuperMimic 世界模型和可微想象，禁 PPO。G1 成功后才做 X1 下半身 12DOF，部署参考 reference/AMP，跳过 RKNN；总目标未完成。
 - G1 控制 `g1_implicit_pd_v1`：上游隐式 PD，固定限矩 88 / 139 / 25 / 5 Nm，无 DC 转速降额。用户允许 Isaac Lab IdealPD 候选；当前无隐式 PD 缺陷证据，暂不切换。后续若对照须独立类型及新 WM 谱系。
 - state `g1_state84_base_contact_v1`（WM84 / critic125 / actor480），reward `g1_legged_lab_walk_v1`，16 项及最终 `R=.5task+dt*style`。旧 DC / 83 维 WM 禁止直接训练复用。
@@ -31,6 +31,14 @@
 - 1000此前速度/步态失败30/24项；续训证实稳定性改善，未验证起步。三连续点、加噪、录像及最终收敛审计尚未通过。已完成模型 checkpoints/go2_manager_converged.pt、checkpoints/a1_amp_converged.pt 保留。
 - 本次CPU `pytest -q tests` **92 passed**，`logs/amp_g1/aligned_extension_cpu.log`。此前原生GPU / 编译梯度 / 四网恢复 / A1回归通过，见 `logs/amp_g1/rsi_alignment_validation.audit.json`。
 
+## 冷启动决定与历史纠正
+
+- 旧 `G1-Velocity-Flat` 已完成随机 0→3000→5000→9000；5000/9000能移动但高频低抬脚，后续无AMP/61/64/70维及四帧对照也未通过。不能再写“从未冷启动”。旧来源 `logs/supermimic/2026-11-04_08-00-37_784295_g1_velocity_cold_start18432_to9000/model_9000.pt` 使用历史DC、g1_walk奖励、旧状态，禁止导入当前隐式PD/84维WM。
+- 当前 `g1_implicit_pd_v1` / state84 / 上游16项奖励下，速度任务只有8轮接口smoke（rsi_alignment_velocity_smoke），没有正式独立冷启动。新PD AMP3000主要站立，不等于此速度任务已失败。
+- 下一阶段先新随机来源 `G1-Velocity-Flat`：关闭AMP/D/RSI，保持上游16项任务奖励/命令范围/新PD/训练主干，先训练1000并独立评估0/1000。此阶段检验无AMP基础运动启动；当前不启用奖励课程（该profile明确忽略Go2课程），不将优化预热称作速度范围课程。
+- 旧Go2式奖励渐进的成功移动证据保留；若新PD无AMP仍站立，再单独设计基础速度→最终奖励课程，不能用无效schedule参数冒充已启用，也不同时做D/奖励权重网格。最终G1 AMP验收不变。
+- 新D `legged_lab_v1` 代码未提交；先CPU/真实GPU编译、四网更新/CLI恢复/旧profile及A1回归，再单独提交。新速度冷启动不使用D，不从任何profile或旧checkpoint热启动。
+
 ## 最新诊断、未解决问题与下一步
 
 - 首动作随机配对v2两seed1701/2026均complete：128组×14分支，8步共同动作预热；普通起点+.03全关节的128步纯物理奖励增益+.01056[.00369,.02144]、+.00500[.00426,.00575]，参考同项CI跨0。前动作/命令配对一致，状态/观测接触差仍在。证据 logs/amp_g1/randomized_return3000_r2.pipeline.json 及两seed.json。
@@ -43,14 +51,58 @@
 - 新证据不支持普通局部梯度完全无效或完整参数一步必然损害真实回报；停止重复该方向审计，不据此归咎隐式PD或切IdealPD。仍需定位参考动态状态的训练覆盖/存活及上游D实现/样本预算差异；当前D512/256 LeakyReLU、专家+策略归一化/统一decay，上游1024/512 ELU、策略更新归一化/输出层独立decay，interval计数与样本复用率须按物理采样量核对，尚未确认因果。
 - 完整结果与当前课程见 [doc/G1_RANDOMIZED_GRADIENT_AUDIT_2026-11-04.md](doc/G1_RANDOMIZED_GRADIENT_AUDIT_2026-11-04.md)；正式G1/X1验收不变。旧事件归档 docs/history/STATUS_2026-11-04_before_randomized_gradient_result.md 与对应PROGRESS。CPU检查见 logs/amp_g1/randomized_return_cpu_final.log。
 
-下一条命令（核实HEAD/进程后核对上游D与采样预算，不重复梯度实验）：
+下一条命令（新D验证已完成，核实GPU空闲后启动新PD无AMP队列，不重复smoke训练）：
 
 ```bash
 cd /pfs/user/learning/amp_new
 git rev-parse HEAD
-cat logs/amp_g1/policy_step3000.pipeline.json
+cat logs/amp_g1/discriminator_alignment_validation.audit.json
 nvidia-smi
-sed -n 85,130p reference/legged_lab/source/legged_lab/legged_lab/rsl_rl/amp/ppo_amp.py
-sed -n 255,338p reference/legged_lab/source/legged_lab/legged_lab/rsl_rl/amp/ppo_amp.py
-sed -n 390,427p go2_supermimic/supermimic/train.py
+PYTHONPATH=. .venv/bin/python logs/amp_g1/implicit_velocity_r1.pipeline.py
 ```
+
+- 2026-11-04T13:55:49+08:00 随机分支/完整Adam诊断、当前课程说明及交接记录已提交 `cddcbde66235e12d1a0ac33c477ab11485745768`；最终CPU92通过，GPU四任务正常结束、无本项目活动作业。提交后仅回填HEAD，不改变正式训练内核/模型。
+
+- 2026-11-04T14:00:24+08:00 上一轮为progress(cddcbde，两seed真实首动作/完整Adam验证改变下一步)，当前已核实旧作业结束/GPU空闲。新假设：当前D实现偏离已验证legged_lab（ELU1024/512、policy-only归一化/eps.01/无clip/1e8冻结、优化后更新统计、输出decay.1）。已核对GitHub固定f33a189及RSL-RL v5.4.1；本机旧rsl normalizer.forward会自动更新，而5.4.1不会，不能据本机旧模块推断上游统计。决定实现独立legged_lab_v1 D profile，旧模型按legacy加载，A1保持兼容；先CPU/oracle/真实GPU编译四网恢复验证，再新随机来源容量profiling及受控训练，不改PD、16项奖励、混合/RSI或做奖励网格。D样本预算先量化，不与组件对齐同时改变。
+
+- 2026-11-04T14:28:59+08:00：恢复核实无活动GPU作业；上一轮新增冷启动记录混淆历史DC与当前隐式PD，已按真实config/模型/评估纠正。启动CPU检查日志 logs/amp_g1/discriminator_alignment_cpu.log；随后新D接口验证及新PD无AMP冷启动，不重复旧DC9000。
+
+- 2026-11-04T14:31:43.206186+08:00 新D独立GPU验证启动 driver 3000701；状态 logs/amp_g1/discriminator_alignment_validation.pipeline.json，日志 logs/amp_g1/discriminator_alignment_validation.driver.log。CPU95通过。先验证再提交，不是收敛训练，不重复启动。
+
+- 2026-11-04T14:31:44.550472+08:00 判别器接口验证启动discriminator_alignment_integration，driver PID3000701、child PID3000870；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:32:57.256628+08:00 判别器接口验证结束discriminator_alignment_integration，返回码0，预期拒绝=False，证据logs/amp_g1/discriminator_alignment_integration.log。
+
+- 2026-11-04T14:32:57.263470+08:00 判别器接口验证启动discriminator_alignment_velocity_smoke，driver PID3000701、child PID3002099；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:33:18.466968+08:00 判别器接口验证结束discriminator_alignment_velocity_smoke，返回码0，预期拒绝=False，证据logs/amp_g1/discriminator_alignment_velocity_smoke.log。
+
+- 2026-11-04T14:33:18.476210+08:00 判别器接口验证启动discriminator_alignment_smoke_initial，driver PID3000701、child PID3002525；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:34:00.891300+08:00 判别器接口验证结束discriminator_alignment_smoke_initial，返回码0，预期拒绝=False，证据logs/amp_g1/discriminator_alignment_smoke_initial.log。
+
+- 2026-11-04T14:34:00.905248+08:00 判别器接口验证启动discriminator_alignment_smoke_resume，driver PID3000701、child PID3003219；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:34:25.141254+08:00 判别器接口验证结束discriminator_alignment_smoke_resume，返回码0，预期拒绝=False，证据logs/amp_g1/discriminator_alignment_smoke_resume.log。
+
+- 2026-11-04T14:34:27.046914+08:00 判别器接口验证启动discriminator_alignment_smoke_gait，driver PID3000701、child PID3003758；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:34:42.191764+08:00 新D接口验证失败AssertionError(PosixPath('logs/amp_g1/discriminator_alignment_smoke_gait.log'))，检查logs/amp_g1/discriminator_alignment_validation.pipeline.json及实际进程，不自动重复启动。
+
+- 2026-11-04T14:36:49.331270+08:00 新D四网20→25/编译已通过；过短2s×2评估不足128对style样本而退出，原训练不重跑。失败记录discriminator_alignment_validation.failed.json保留，仅评估恢复driver3005309，状态仍discriminator_alignment_validation.pipeline.json。
+
+- 2026-11-04T14:36:50.642204+08:00 判别器接口验证启动discriminator_alignment_smoke_gait_r2，driver PID3005309、child PID3005466；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:37:30.021583+08:00 判别器接口验证结束discriminator_alignment_smoke_gait_r2，返回码0，预期拒绝=False，证据logs/amp_g1/discriminator_alignment_smoke_gait_r2.log。
+
+- 2026-11-04T14:37:30.040495+08:00 判别器接口验证启动discriminator_alignment_legacy_checkpoint_gait，driver PID3005309、child PID3006136；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:38:12.456197+08:00 判别器接口验证结束discriminator_alignment_legacy_checkpoint_gait，返回码0，预期拒绝=False，证据logs/amp_g1/discriminator_alignment_legacy_checkpoint_gait.log。
+
+- 2026-11-04T14:38:12.466404+08:00 判别器接口验证启动discriminator_alignment_a1_regression，driver PID3005309、child PID3006928；命令/配置/日志见logs/amp_g1/discriminator_alignment_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T14:38:36.730545+08:00 判别器接口验证结束discriminator_alignment_a1_regression，返回码0，预期拒绝=False，证据logs/amp_g1/discriminator_alignment_a1_regression.log。
+
+- 2026-11-04T14:38:36.731360+08:00 新D profile CPU95/真实GPU编译梯度/四网更新与CLI恢复/旧checkpoint/A1回归完成；仅补足评估样本，训练未重跑。
+
+- 2026-11-04T14:39:27+08:00 新D验证complete/CPU95/oracle/原生GPU/编译梯度/四网20→25/旧profile/A1全部通过，无活动PID。提交范围仅D和文档，未跟踪探索文件保留。当前G1无验收最佳；下一队列新PD速度冷启动不使用D。思路doc/G1_DISCRIMINATOR_ALIGNMENT_2026-11-04.md。

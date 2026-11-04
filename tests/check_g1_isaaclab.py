@@ -15,6 +15,7 @@ parser.add_argument("--amp-feature-schema", default="g1_amp_61_v1")
 parser.add_argument("--amp-num-frames", type=int, default=2)
 parser.add_argument("--legacy-rewards", action="store_true")
 parser.add_argument("--align-reset-commands", action="store_true")
+parser.add_argument("--amp-discriminator-profile", default="legacy")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 launcher = AppLauncher(args)
@@ -105,7 +106,8 @@ try:
     torch.testing.assert_close(expected, estimate, atol=2e-5, rtol=2e-5)
   disc = g1.AMPDiscriminator(
     (32, 16), args.amp_feature_schema, args.amp_num_frames,
-    command_gate=cfg.task.reward_profile != g1.REWARD_PROFILE).to(env.device).requires_grad_(False)
+    command_gate=cfg.task.reward_profile != g1.REWARD_PROFILE,
+    profile=args.amp_discriminator_profile).to(env.device).requires_grad_(False)
   disc.norm.update(torch.cat(env.amp_motion.sample_pairs(1024)))
   env.amp_discriminator = disc
   alignment_checks = ordinary_reset_checks = 0
@@ -292,6 +294,7 @@ try:
             "physx_drive_gains_verified": True,
             "amp_feature_schema": args.amp_feature_schema,
             "amp_num_frames": args.amp_num_frames,
+            "amp_discriminator_profile": disc.profile,
             "native_foot_position_max_error_m": fk_error,
             "timeouts": timeouts, "real_td_max_error": real_td_max_error,
             "command_resamples": resamples, "expert_feature_max_error": expert_error,
