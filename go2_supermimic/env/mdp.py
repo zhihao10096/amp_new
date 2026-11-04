@@ -15,6 +15,10 @@ from go2_supermimic.supermimic.state import robot_state
 class Go2JointPositionAction(JointPositionAction):
   def process_actions(self, actions):
     self._env._state_before_action = robot_state(self._env).clone()
+    if self._env._amp_state_history.shape[1]:
+      self._env._amp_before_history = self._env.amp_history_for_state(
+        self._env._state_before_action)
+      self._env._amp_history_reset.zero_()
     # Isaac Lab 2.1 passes a view of the caller's input, not its own action
     # buffer. Preserve that input and publish the clipped action to managers.
     clipped = actions.clamp(-self.cfg.raw_clip, self.cfg.raw_clip)
@@ -69,6 +73,7 @@ class BodyVelocityCommandCfg(CommandTermCfg):
 def reset_robot(env, env_ids):
   """Reset event: random yaw/joints, standing root state and cleared gait."""
   env.gait[env_ids] = 0
+  env._amp_history_reset[env_ids] = True
   root = env.robot.data.default_root_state[env_ids].clone()
   root[:, :3] += env.scene.env_origins[env_ids]
   yaw = torch.rand(len(env_ids), device=env.device) * (2 * torch.pi)
@@ -130,8 +135,13 @@ def capture_transition(env):
       # per-transition score current even while that term contributes nothing.
       with torch.no_grad():
         env.extras["amp_style"] = (
-          env.amp_discriminator.reward(before, state, env.consts.default_q, commands)
+          env.amp_discriminator.reward(
+            before, state, env.consts.default_q, commands, env._amp_before_history)
           if env.amp_discriminator is not None else state.new_zeros(env.num_envs))
+      if env._amp_state_history.shape[1]:
+        env.extras["transition"]["amp_history"] = env._amp_before_history
+        env._amp_state_history = torch.cat(
+          (env._amp_before_history[:, 1:], before[:, None]), 1)
     env._transition_step = env.common_step_counter
   return env.extras["transition"]["next_state"]
 

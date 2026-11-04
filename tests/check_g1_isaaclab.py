@@ -12,6 +12,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", default="logs/amp_g1/integration.json")
 parser.add_argument("--compile", action="store_true")
 parser.add_argument("--amp-feature-schema", default="g1_amp_61_v1")
+parser.add_argument("--amp-num-frames", type=int, default=2)
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 launcher = AppLauncher(args)
@@ -37,13 +38,14 @@ try:
   cfg.episode_length_s = .8
   cfg.amp_reference_reset_fraction = .5
   cfg.amp_feature_schema = args.amp_feature_schema
+  cfg.amp_num_frames = args.amp_num_frames
   env = gym.make("G1-AMP-Flat", cfg=cfg).unwrapped
   assert type(env).step is ManagerBasedRLEnv.step
   assert type(env)._reset_idx is ManagerBasedRLEnv._reset_idx
   assert env.robot.joint_names == env.amp_motion.joint_names
   assert env.robot.num_joints == 29
   disc = g1.AMPDiscriminator(
-    (32, 16), args.amp_feature_schema).to(env.device).requires_grad_(False)
+    (32, 16), args.amp_feature_schema, args.amp_num_frames).to(env.device).requires_grad_(False)
   disc.norm.update(torch.cat(env.amp_motion.sample_pairs(1024)))
   env.amp_discriminator = disc
   obs, _ = env.reset(seed=42)
@@ -70,6 +72,7 @@ try:
   resets = falls = resamples = timeouts = 0
   real_td_max_error = 0.
   real_anchor = Imagination(ImagineCfg(), cfg.task, env.consts, disc)
+  prior_done = torch.ones(32, dtype=torch.bool, device=env.device)
 
   def context_value(x):
     return (x[:, 0] + x[:, 83] + x[:, -9] + x[:, -8]).unsqueeze(-1)
@@ -90,13 +93,18 @@ try:
     before, state = env._state_before_action, extras["transition"]["next_state"]
     base, _ = g1.reward(before, state, action, previous, commands, env.consts,
                         cfg.task, env.step_dt, term, gait)
-    style = disc.reward(before, state, env.consts.default_q, commands)
+    physical_history = extras["transition"].get("amp_history")
+    style = disc.reward(before, state, env.consts.default_q, commands, physical_history)
     torch.testing.assert_close(actual, base + weight * env.step_dt * style, atol=1e-5, rtol=1e-5)
     torch.testing.assert_close(extras["amp_style"], style)
     real_anchor.amp_weight.fill_(weight)
     batch = {"s": before, "next_s": state, "action": action, "a_prev": previous,
              "commands": commands, "command_time": remaining, "gait": gait,
              "done": term | trunc}
+    if physical_history is not None:
+      batch["amp_history"] = physical_history
+      torch.testing.assert_close(
+        physical_history[prior_done], before[prior_done, None].expand(-1, 2, -1))
     real_inputs, targets = real_anchor.real_targets(context_value, batch)
     keep = (remaining > env.step_dt) | term
     next_gait, _ = g1.advance_gait(
@@ -109,6 +117,7 @@ try:
     real_td_max_error = max(real_td_max_error, (targets - expected_target).abs().max().item())
     torch.testing.assert_close(real_inputs[:, :83], before[keep])
     done = term | trunc
+    prior_done = done.clone()
     frame = g1.obs_frame(robot_state(env), env.actions, env.commands)
     expected = g1.push_history(history, frame, cfg.task.history)
     repeated = torch.cat([frame[name].repeat(1, cfg.task.history) for name, _ in g1.OBS_TERMS], -1)
@@ -135,6 +144,8 @@ try:
   seed = {"s": robot_state(env).clone(), "a_prev": env.actions.clone(),
           "obs": obs["policy"].clone(), "commands": env.commands.clone(),
           "command_time": torch.full((32,), 10., device=env.device), "gait": env.gait.clone()}
+  if args.amp_num_frames > 2:
+    seed["amp_history"] = env.amp_history_for_state(seed["s"])
   eager = Imagination(ImagineCfg(horizon=4), task, env.consts, disc)
   compiled = Imagination(ImagineCfg(horizon=4, compile=args.compile), task, env.consts, disc)
   eager.amp_weight.fill_(.5)
@@ -153,6 +164,7 @@ try:
   assert torch.isfinite(gradients[0]).all() and gradients[0].abs().sum() > 0
   result = {"passed": True, "robot_kind": "g1", "resets": resets, "falls": falls,
             "amp_feature_schema": args.amp_feature_schema,
+            "amp_num_frames": args.amp_num_frames,
             "native_foot_position_max_error_m": fk_error,
             "timeouts": timeouts, "real_td_max_error": real_td_max_error,
             "command_resamples": resamples, "expert_feature_max_error": expert_error,

@@ -152,24 +152,51 @@ class MotionLibrary:
 class AMPDiscriminator(nn.Module):
   features = staticmethod(state_features)
 
-  def __init__(self, hidden: tuple[int, ...] = (512, 256), feature_dim: int = AMP_DIM):
+  def __init__(self, hidden: tuple[int, ...] = (512, 256), feature_dim: int = AMP_DIM,
+               num_frames: int = 2):
     super().__init__()
+    if num_frames not in (2, 4):
+      raise ValueError("AMP num_frames must be 2 or 4")
+    self.num_frames = num_frames
     self.norm = RunningNorm(feature_dim)
-    self.net = mlp(2 * feature_dim, hidden, 1, act=nn.LeakyReLU)
+    self.net = mlp(num_frames * feature_dim, hidden, 1, act=nn.LeakyReLU)
 
   def forward(self, before: torch.Tensor, after: torch.Tensor) -> torch.Tensor:
     return self.net(torch.cat((self.norm(before), self.norm(after)), -1)).squeeze(-1)
 
+  def sequence_score(self, features: torch.Tensor) -> torch.Tensor:
+    """Chronological B x F x D observations, with shared per-frame statistics."""
+    if features.ndim != 3 or features.shape[1] != self.num_frames:
+      raise ValueError("AMP sequence length differs from the discriminator")
+    return self.net(self.norm(features).flatten(1)).squeeze(-1)
+
   def reward(self, before: torch.Tensor, after: torch.Tensor, default_q: torch.Tensor,
-             commands: torch.Tensor) -> torch.Tensor:
+             commands: torch.Tensor, history: torch.Tensor | None = None) -> torch.Tensor:
     # Deliberately retain state/action gradients; callers freeze only parameters.
-    score = self(self.features(before, default_q), self.features(after, default_q))
+    if self.num_frames == 2:
+      score = self(self.features(before, default_q), self.features(after, default_q))
+    else:
+      if history is None or history.shape[1] != self.num_frames - 2:
+        raise ValueError("multi-frame AMP requires pre-transition state history")
+      states = torch.cat((history, before[:, None], after[:, None]), 1)
+      score = self.sequence_score(self.features(states, default_q))
     style = (1 - .25 * (score - 1).square()).clamp(min=0)
     return style * (commands.norm(dim=-1) > .1)
 
-  def loss(self, expert: tuple[torch.Tensor, torch.Tensor],
-           policy: tuple[torch.Tensor, torch.Tensor],
+  def loss(self, expert: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
+           policy: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
            penalty: float = 10.) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    if isinstance(expert, torch.Tensor):
+      if (not isinstance(policy, torch.Tensor) or expert.ndim != 3
+          or expert.shape[1:] != policy.shape[1:]
+          or expert.shape[1] != self.num_frames):
+        raise ValueError("invalid AMP expert/policy temporal sequences")
+      with torch.no_grad():
+        self.norm.update(torch.cat((expert.flatten(0, 1), policy.flatten(0, 1))))
+      positive = self.norm(expert).flatten(1).detach().requires_grad_()
+      expert_score = self.net(positive).squeeze(-1)
+      policy_score = self.sequence_score(policy.detach())
+      return self._score_loss(positive, expert_score, policy_score, penalty)
     a, b = expert
     c, d = policy
     with torch.no_grad():
@@ -177,6 +204,12 @@ class AMPDiscriminator(nn.Module):
     positive = torch.cat((self.norm(a), self.norm(b)), -1).detach().requires_grad_()
     expert_score = self.net(positive).squeeze(-1)
     policy_score = self(c.detach(), d.detach())
+    return self._score_loss(positive, expert_score, policy_score, penalty)
+
+  @staticmethod
+  def _score_loss(positive: torch.Tensor, expert_score: torch.Tensor,
+                  policy_score: torch.Tensor, penalty: float
+                  ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     classification = .5 * ((expert_score - 1).square().mean()
                             + (policy_score + 1).square().mean())
     grad = torch.autograd.grad(expert_score.sum(), positive, create_graph=True)[0]

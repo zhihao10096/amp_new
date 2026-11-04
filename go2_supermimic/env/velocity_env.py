@@ -38,6 +38,7 @@ class Go2VelocityEnv(ManagerBasedRLEnv):
       if self.robot_kind == "g1":
         motion_kwargs["feature_schema"] = getattr(
           self.cfg, "amp_feature_schema", "g1_amp_61_v1")
+        motion_kwargs["num_frames"] = self.cfg.amp_num_frames
       self.amp_motion = amp_api(self.robot_kind).MotionLibrary(
         self.cfg.amp_motion_files, self.device, self.step_dt, **motion_kwargs)
     else:
@@ -46,9 +47,19 @@ class Go2VelocityEnv(ManagerBasedRLEnv):
       if self.robot.joint_names != self.amp_motion.joint_names:
         raise ValueError("G1 motion and PhysX joint order differ")
     self.gait = torch.zeros(self.num_envs, api.GAIT_DIM, device=self.device)
+    past = self.cfg.amp_num_frames - 2 if self.cfg.amp_enabled else 0
+    self._amp_state_history = torch.zeros(
+      self.num_envs, past, api.STATE_DIM, device=self.device)
+    self._amp_history_reset = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+    self._amp_before_history = self._amp_state_history.clone()
     self._state_before_action = robot_state(self).clone()
     self._transition_step = -1
     super().load_managers()
+
+  def amp_history_for_state(self, state: torch.Tensor) -> torch.Tensor:
+    """Reset padding uses the new episode's state, after simulator refresh."""
+    return torch.where(
+      self._amp_history_reset[:, None, None], state[:, None], self._amp_state_history)
 
   @property
   def actions(self):

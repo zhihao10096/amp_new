@@ -60,13 +60,16 @@ def main():
           or checkpoint.get("robot_kind", "go2") != env.robot_kind):
         raise ValueError("gait checkpoints must use identical robot and task settings")
       attach_evaluation_amp(env, checkpoint)
+      if checkpoint["cfg"].get("amp_num_frames", 2) != cfg.amp_num_frames:
+        raise ValueError("gait checkpoints must use identical AMP history lengths")
       expert = None
       feature_schema = checkpoint["cfg"].get("amp_feature_schema",
                                                   "g1_amp_61_v1")
       if "amp" in checkpoint:
         if env.robot_kind == "g1":
           expert = MotionLibrary(checkpoint["cfg"]["amp_motion_files"],
-                                 env.device, env.step_dt, feature_schema=feature_schema)
+                                 env.device, env.step_dt, feature_schema=feature_schema,
+                                 num_frames=checkpoint["cfg"].get("amp_num_frames", 2))
         else:
           expert = MotionLibrary(checkpoint["cfg"]["amp_motion_files"],
                                  env.device, env.step_dt)

@@ -74,6 +74,8 @@ class TrainCfg:
   """Zero disables the curriculum; otherwise reach final rewards at this iteration."""
   amp_motion_files: str = ""
   amp_feature_schema: str = "g1_amp_61_v1"
+  amp_num_frames: int = 2
+  """Chronological discriminator frames; four-frame support is G1-only."""
   amp_hidden: tuple[int, ...] = (512, 256)
   amp_weight: float = .5
   amp_lr: float = 1e-4
@@ -96,6 +98,10 @@ class TrainCfg:
         raise ValueError(f"{name} must be positive")
     if self.buffer_len < self.wm_window:
       raise ValueError("buffer_len must be at least wm_window")
+    if (self.amp_num_frames not in (2, 4)
+        or self.buffer_len < self.amp_num_frames - 1
+        or (self.amp_num_frames != 2 and self.task != "G1-AMP-Flat")):
+      raise ValueError("amp_num_frames must be 2, or 4 for G1 AMP with enough replay")
     if self.imag_batch * self.horizon < self.critic_minibatches:
       raise ValueError("critic_minibatches exceeds the imagined transition count")
     if not 0 <= self.explore_frac <= 1:
@@ -178,7 +184,7 @@ class Trainer:
     if env.cfg.amp_enabled:
       if env.robot_kind == "g1":
         self.amp = amp_api(env.robot_kind).AMPDiscriminator(
-          cfg.amp_hidden, cfg.amp_feature_schema).to(self.device)
+          cfg.amp_hidden, cfg.amp_feature_schema, cfg.amp_num_frames).to(self.device)
       else:
         self.amp = amp_api(env.robot_kind).AMPDiscriminator(cfg.amp_hidden).to(self.device)
     else:
@@ -187,7 +193,8 @@ class Trainer:
                     if self.amp is not None else None)
     self.env.amp_discriminator = self.amp
     self.buf = ReplayBuffer(cfg.num_envs, cfg.buffer_len, self.obs.shape[-1], self.device,
-                            api.STATE_DIM, api.NUM_JOINTS, api.GAIT_DIM)
+                            api.STATE_DIM, api.NUM_JOINTS, api.GAIT_DIM,
+                            amp_num_frames=cfg.amp_num_frames)
     self.imag = Imagination(
       ImagineCfg(horizon=cfg.horizon, dt=env.step_dt, compile=cfg.compile_imagination),
       env.cfg.task, env.consts, amp=self.amp)
@@ -374,15 +381,20 @@ class Trainer:
   def fit_amp(self):
     metrics = {}
     for _ in range(self.cfg.amp_updates):
-      before, after = self.buf.sample_pairs(self.cfg.amp_batch)
       with torch.no_grad():
-        policy = (self.amp.features(before, self.env.consts.default_q),
-                  self.amp.features(after, self.env.consts.default_q))
-        if self.env.robot_kind == "g1":
-          expert = self.env.amp_motion.sample_pairs(
-            self.cfg.amp_batch, train=True, feature_schema=self.cfg.amp_feature_schema)
+        if self.amp.num_frames != 2:
+          states = self.buf.sample_sequences(self.cfg.amp_batch)
+          policy = self.amp.features(states, self.env.consts.default_q)
+          expert = self.env.amp_motion.sample_sequences(self.cfg.amp_batch, train=True)
         else:
-          expert = self.env.amp_motion.sample_pairs(self.cfg.amp_batch, train=True)
+          before, after = self.buf.sample_pairs(self.cfg.amp_batch)
+          policy = (self.amp.features(before, self.env.consts.default_q),
+                    self.amp.features(after, self.env.consts.default_q))
+          if self.env.robot_kind == "g1":
+            expert = self.env.amp_motion.sample_pairs(
+              self.cfg.amp_batch, train=True, feature_schema=self.cfg.amp_feature_schema)
+          else:
+            expert = self.env.amp_motion.sample_pairs(self.cfg.amp_batch, train=True)
       loss, values = self.amp.loss(expert, policy, self.cfg.amp_grad_penalty)
       self._update(loss, self.amp, self.opt_amp)
       values["amp_loss"] = loss.detach()

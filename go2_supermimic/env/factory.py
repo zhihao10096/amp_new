@@ -27,6 +27,7 @@ def evaluation_config(checkpoint, num_envs, device, observation_noise=False):
   cfg.amp_enabled = "amp" in checkpoint
   cfg.amp_weight = checkpoint["cfg"].get("amp_weight", .5)
   if task == "G1-AMP-Flat":
+    cfg.amp_num_frames = checkpoint["cfg"].get("amp_num_frames", 2)
     cfg.amp_feature_schema = checkpoint["cfg"].get(
       "amp_feature_schema", "g1_amp_61_v1")
   return task, cfg
@@ -39,7 +40,8 @@ def attach_evaluation_amp(env, checkpoint):
   if env.robot_kind == "g1":
     disc = amp_api(env.robot_kind).AMPDiscriminator(
       tuple(checkpoint["cfg"]["amp_hidden"]),
-      checkpoint["cfg"].get("amp_feature_schema", "g1_amp_61_v1")).to(env.device)
+      checkpoint["cfg"].get("amp_feature_schema", "g1_amp_61_v1"),
+      checkpoint["cfg"].get("amp_num_frames", 2)).to(env.device)
   else:
     disc = amp_api(env.robot_kind).AMPDiscriminator(
       tuple(checkpoint["cfg"]["amp_hidden"])).to(env.device)

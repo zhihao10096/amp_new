@@ -164,3 +164,37 @@
 - 2026-11-04T10:02:12+08:00 用户要求的全程问题/方案/效果报告已补齐至70维训练及独立评估结束：数据与接口、R1/R2/R3、RSI/几何排查、动态拟合/响应/MPC、价值锚定、Go2课程复现、四臂AMP特征、奖励梯度、容量和执行错误均覆盖；明确已修复/局部改善/真实步态收益的区别。四臂对照与足端特征文档同步更新；G1未验收成功，不启动新实验。报告docs/experiments/G1_AMP_ISSUES_AND_SOLUTIONS_2026-11-04.md，下一步核对原始JSON与文档指标、检查diff后提交并同步本地主机交付副本。
 
 - 2026-11-04T10:04:37+08:00 报告核验完成：四臂8行物理指标逐项对照原始JSON、31份关键证据文件存在、70维pipeline complete及实现/更新审计passed；另核对R1/R2/R3最终速度和9000来源。纠正旧报告R1前进步频精确值为.016Hz（非严格0，仍无有效步态）。文档diff检查通过，未改训练代码或启动实验；准备提交报告/四臂对照/足端报告及本轮交接记录。
+
+- 2026-11-04T10:05:26+08:00 本次文档任务完成：提交af59616（7份报告/交接文档，未提交无关代码），本地交付artifacts/G1_AMP_ISSUES_AND_SOLUTIONS_2026-11-04.md。主要结论：Go2流程复现使G1随机谱系稳定移动；无AMP/61/64/70维同源诊断均不达walk，G1未成功。最终GPU复核1 MiB, 0 %、计算进程无；下一步先读全程报告和建议，再决定新的单变量实验，不重复启动完成队列。
+
+- 2026-11-04T10:09:58+08:00 主目标继续：上一轮文档归档是进展（af59616及四臂物理负结果），当前实际GPU空闲。下一单变量确定为70维AMP两帧→四帧（20→60ms），先实现并完成接口/编译/更新恢复/兼容，再同9000来源1000轮筛选；奖励、数据、RSI及WM结构不改。回放从已有ring重建历史避免数GB额外显存，reset历史和想象梯度为关键风险。用户新增每项工作须在doc/记录解决思路，已新增doc/G1_AMP_TEMPORAL_HISTORY_2026-11-04.md并补AGENTS入口，尚无新训练。
+
+- 2026-11-04T10:16:57 四帧实现已接通G1专家序列/真实reset历史/现有ring重建/想象跨帧梯度/CLI与metadata，默认两帧兼容；本地成功检索MimicKit num_disc_obs_steps与历史堆叠，URL/摘录logs/amp_g1/github_amp_temporal_history_local_2026-11-04.json，上游AMP_NUM_STEPS=4已核对。首轮CPU39过3失败：真实TD默认接口多传参数影响旧测试替身，已恢复两帧调用；多任务编译单测共享Dynamo缓存达8个专门化，新增测试改为隔离缓存，不改生产编译上限。全部CPU重跑中，日志history4_cpu_r2.log，未启动GPU/训练。
+
+- 2026-11-04T10:17:43 四帧CPU完整68项通过（history4_cpu_r2.log）；真实GPU原生/想象编译/四网20→25及CLI四帧继承/A1回归/独立步态验证启动，driver PID2818662，状态logs/amp_g1/history4_validation.pipeline.json。仅接口验证，不是正式训练；恢复核对原PID，勿重复启动。
+
+- 四帧AMP特征验证启动history4_integration，driver PID2818662、child PID2818825；配置/命令/log见logs/amp_g1/history4_validation.pipeline.json，勿重复启动。
+
+- 四帧AMP特征验证结束history4_integration，返回码0，日志logs/amp_g1/history4_integration.log。
+
+- 四帧AMP特征验证启动history4_smoke_initial，driver PID2818662、child PID2819871；配置/命令/log见logs/amp_g1/history4_validation.pipeline.json，勿重复启动。
+
+- 四帧AMP特征验证结束history4_smoke_initial，返回码0，日志logs/amp_g1/history4_smoke_initial.log。
+
+- 四帧AMP特征验证启动history4_smoke_resume，driver PID2818662、child PID2820728；配置/命令/log见logs/amp_g1/history4_validation.pipeline.json，勿重复启动。
+
+- 四帧AMP特征验证结束history4_smoke_resume，返回码0，日志logs/amp_g1/history4_smoke_resume.log。
+
+- 四帧AMP特征验证启动history4_a1_regression，driver PID2818662、child PID2821196；配置/命令/log见logs/amp_g1/history4_validation.pipeline.json，勿重复启动。
+
+- 四帧AMP特征验证结束history4_a1_regression，返回码0，日志logs/amp_g1/history4_a1_regression.log。
+
+- 四帧AMP特征验证启动history4_smoke_gait，driver PID2818662、child PID2821784；配置/命令/log见logs/amp_g1/history4_validation.pipeline.json，勿重复启动。
+
+- 2026-11-04T10:21:07 四帧原生GPU/想象编译验证通过：reset65、摔倒13、超时52、命令切换356；编译回报max1.79e-07、actor梯度max2.91e-11。终止前/混合RSI/reset历史及真实TD奖励一致；四网20→25/CLI继承也已完成，driver2818662继续A1回归/独立步态，logs/amp_g1/history4_validation.pipeline.json。默认两帧D一步更新/回放采样/G1想象回报与actor梯度相对af59616逐位一致（history4_default2_compatibility.json）。
+
+- 四帧AMP特征验证结束history4_smoke_gait，返回码0，日志logs/amp_g1/history4_smoke_gait.log。
+
+- 四帧AMP特征验证全部通过：CPU68、参考训练段几何/梯度、原生接口/终止/命令/reset、编译返回/actor梯度、四网四优化器20→25/CLI schema/四帧恢复、61/64维旧模型metadata与D加载、A1回归；证据logs/amp_g1/history4_validation.audit.json。短跑不算收敛；下一步先提交实现，再启动同源1000轮诊断。
+
+- 2026-11-04T10:23:12 四帧完整验证全部结束并通过：CPU68、默认两帧逐位兼容、原生/想象GPU编译、四网四优化器20→25、CLI自动继承schema/四帧、旧61/64维metadata/D加载及A1 GPU回归，history4_validation.audit.json。25轮随机接口模型七指令803摔，只验证评估可运行，不是步态收益；下一步提交实现后，同9000来源/70维/18432env/1000轮单变量诊断，保留全部原标准。思路文档doc/G1_AMP_TEMPORAL_HISTORY_2026-11-04.md已更新，旧STATUS已快照。

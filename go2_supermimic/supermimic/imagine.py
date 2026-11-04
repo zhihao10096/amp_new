@@ -41,7 +41,7 @@ class Imagination:
   def critic_input(s, previous_action, commands, remaining, gait):
     return torch.cat([s, previous_action, commands, remaining[:, None], gait], -1)
 
-  def _step(self, s, previous, history, commands, remaining, gait, wm, actor):
+  def _step(self, s, previous, history, commands, remaining, gait, amp_history, wm, actor):
     cfg, task = self.cfg, self.task
     api = self.api
     critic_in = self.critic_input(s, previous, commands, remaining, gait)
@@ -52,26 +52,35 @@ class Imagination:
                          self.consts, task, cfg.dt, death, gait,
                          self.reward_parameters if cfg.compile else None)
     if self.amp is not None:
-      reward = reward + self.amp_weight * cfg.dt * self.amp.reward(
-        s, next_s, self.consts.default_q, commands)
+      if self.amp.num_frames == 2:
+        style = self.amp.reward(s, next_s, self.consts.default_q, commands)
+      else:
+        style = self.amp.reward(s, next_s, self.consts.default_q, commands, amp_history)
+        # Keep the graph through older imagined states; only replay seeds are
+        # detached. The critic interface stays the same as the matched control.
+        amp_history = torch.cat((amp_history[:, 1:], s[:, None]), 1)
+      reward = reward + self.amp_weight * cfg.dt * style
     gait, _ = api.advance_gait(gait, s[:, api.CONTACT], next_s[:, api.CONTACT], cfg.dt)
     commands, remaining = api.advance_commands(commands, remaining, cfg.dt, task.commands)
     frame = api.obs_frame(next_s, action, commands, task.observation_noise)
     history = api.push_history(history, frame, task.history)
-    return next_s, action, history, commands, remaining, gait, reward, death, critic_in
+    return next_s, action, history, commands, remaining, gait, reward, death, critic_in, amp_history
 
   def rollout(self, wm, actor, critic, seed):
     cfg = self.cfg
     s, previous, history = seed["s"], seed["a_prev"], seed["obs"]
     commands, remaining = seed["commands"], seed["command_time"]
     gait = seed.get("gait", s.new_zeros(s.shape[0], self.api.GAIT_DIM))
+    amp_history = seed.get("amp_history", s.new_empty(s.shape[0], 0, s.shape[-1]))
+    if self.amp is not None and amp_history.shape[1] != self.amp.num_frames - 2:
+      raise ValueError("imagined AMP seed is missing its physical state history")
     survival = torch.ones(s.shape[0], device=s.device)
     objective = torch.zeros_like(survival)
     rewards, survivals, inputs, continuations = [], [survival], [], []
     discount = 1.0
     for _ in range(cfg.horizon):
-      s, previous, history, commands, remaining, gait, reward, death, critic_in = self._step_fn(
-        s, previous, history, commands, remaining, gait, wm, actor)
+      s, previous, history, commands, remaining, gait, reward, death, critic_in, amp_history = (
+        self._step_fn(s, previous, history, commands, remaining, gait, amp_history, wm, actor))
       inputs.append(critic_in)
       objective = objective + discount * survival * reward
       survival = survival * (1 - death)
@@ -117,8 +126,12 @@ class Imagination:
       before, after, batch["action"], batch["a_prev"], batch["commands"],
       self.consts, task, cfg.dt, death, batch["gait"])
     if self.amp is not None:
-      reward = reward + self.amp_weight * cfg.dt * self.amp.reward(
-        before, after, self.consts.default_q, batch["commands"])
+      if getattr(self.amp, "num_frames", 2) == 2:
+        style = self.amp.reward(before, after, self.consts.default_q, batch["commands"])
+      else:
+        style = self.amp.reward(
+          before, after, self.consts.default_q, batch["commands"], batch.get("amp_history"))
+      reward = reward + self.amp_weight * cfg.dt * style
     next_gait, _ = api.advance_gait(
       batch["gait"], before[:, api.CONTACT], after[:, api.CONTACT], cfg.dt)
     keep = (batch["command_time"] > cfg.dt) | death

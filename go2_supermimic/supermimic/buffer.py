@@ -7,8 +7,12 @@ from go2_supermimic.velocity import GAIT_DIM, NUM_JOINTS, STATE_DIM
 
 class ReplayBuffer:
   def __init__(self, num_envs, length, obs_dim, device,
-               state_dim=STATE_DIM, act_dim=NUM_JOINTS, gait_dim=GAIT_DIM):
+               state_dim=STATE_DIM, act_dim=NUM_JOINTS, gait_dim=GAIT_DIM,
+               amp_num_frames: int = 2):
     self.n, self.length, self.device = num_envs, length, device
+    if amp_num_frames not in (2, 4) or length < amp_num_frames - 1:
+      raise ValueError("replay needs room for the configured AMP sequence")
+    self.amp_num_frames = amp_num_frames
     z = lambda *shape: torch.zeros(num_envs, length, *shape, device=device)
     self.s, self.next_s = z(state_dim), z(state_dim)
     self.a, self.a_prev = z(act_dim), z(act_dim)
@@ -46,13 +50,45 @@ class ReplayBuffer:
             "valid": valid}
 
   def sample_states(self, batch):
-    if not self.size:
-      raise ValueError("cannot sample empty replay")
+    past = self.amp_num_frames - 2
+    if self.size <= past:
+      raise ValueError("cannot sample replay before enough AMP history is available")
     env = torch.randint(self.n, (batch,), device=self.device)
-    idx = self._physical(torch.randint(self.size, (batch,), device=self.device))
-    return {"s": self.s[env, idx], "a_prev": self.a_prev[env, idx],
-            "obs": self.obs[env, idx].float(), "commands": self.commands[env, idx],
-            "command_time": self.command_time[env, idx], "gait": self.gait[env, idx]}
+    logical = torch.randint(past, self.size, (batch,), device=self.device)
+    idx = self._physical(logical)
+    result = {"s": self.s[env, idx], "a_prev": self.a_prev[env, idx],
+              "obs": self.obs[env, idx].float(), "commands": self.commands[env, idx],
+              "command_time": self.command_time[env, idx], "gait": self.gait[env, idx]}
+    if past:
+      result["amp_history"] = self._state_history(env, logical, past)
+    return result
+
+  def _state_history(self, env: torch.Tensor, logical: torch.Tensor,
+                     past: int) -> torch.Tensor:
+    """Reconstruct history without another full replay-sized allocation.
+
+    After either kind of reset, pad with the first state of the new episode.
+    The terminal next state remains valid only as the last frame of its own
+    transition. Logical indices keep ring wraparound out of episode semantics.
+    """
+    offsets = torch.arange(past + 1, device=self.device)
+    idx = self._physical(logical[:, None] - past + offsets)
+    states = self.s[env[:, None], idx]
+    boundaries = self.done[env[:, None], idx[:, :-1]]
+    first = torch.where(boundaries, offsets[None, 1:], 0).max(-1).values
+    selected = offsets[None, :-1].maximum(first[:, None])
+    return states.gather(1, selected[:, :, None].expand(-1, -1, states.shape[-1]))
+
+  def sample_sequences(self, batch: int) -> torch.Tensor:
+    past = self.amp_num_frames - 2
+    if self.size <= past:
+      raise ValueError("not enough replay for the AMP sequence")
+    env = torch.randint(self.n, (batch,), device=self.device)
+    logical = torch.randint(past, self.size, (batch,), device=self.device)
+    idx = self._physical(logical)
+    history = (self._state_history(env, logical, past) if past
+               else self.s[env, idx][:, None, :][:, :0])
+    return torch.cat((history, self.s[env, idx][:, None], self.next_s[env, idx][:, None]), 1)
 
   def sample_pairs(self, batch):
     """Use stored pre-reset terminal states, never the next episode's reset."""
@@ -65,15 +101,20 @@ class ReplayBuffer:
   def sample_transitions(self, batch: int, env_ids: torch.Tensor | None = None,
                          generator: torch.Generator | None = None) -> dict[str, torch.Tensor]:
     """Sample physical transitions without replacing terminal states by resets."""
-    if not self.size or batch <= 0:
+    past = self.amp_num_frames - 2
+    if self.size <= past or batch <= 0:
       raise ValueError("need a nonempty replay and a positive transition batch")
     if env_ids is None:
       env_ids = torch.arange(self.n, device=self.device)
     if not len(env_ids):
       raise ValueError("need at least one eligible environment")
     env = env_ids[torch.randint(len(env_ids), (batch,), device=self.device, generator=generator)]
-    idx = self._physical(torch.randint(self.size, (batch,), device=self.device, generator=generator))
-    return {"s": self.s[env, idx], "next_s": self.next_s[env, idx],
-            "action": self.a[env, idx], "a_prev": self.a_prev[env, idx],
-            "commands": self.commands[env, idx], "command_time": self.command_time[env, idx],
-            "gait": self.gait[env, idx], "done": self.done[env, idx]}
+    logical = torch.randint(past, self.size, (batch,), device=self.device, generator=generator)
+    idx = self._physical(logical)
+    result = {"s": self.s[env, idx], "next_s": self.next_s[env, idx],
+              "action": self.a[env, idx], "a_prev": self.a_prev[env, idx],
+              "commands": self.commands[env, idx], "command_time": self.command_time[env, idx],
+              "gait": self.gait[env, idx], "done": self.done[env, idx]}
+    if past:
+      result["amp_history"] = self._state_history(env, logical, past)
+    return result

@@ -223,9 +223,9 @@ def frame_features(f: torch.Tensor,
 
 class AMPDiscriminator(PairDiscriminator):
   def __init__(self, hidden: tuple[int, ...] = (512, 256),
-               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA):
+               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA, num_frames: int = 2):
     self.feature_schema = feature_schema
-    super().__init__(hidden, feature_dim=amp_feature_dim(feature_schema))
+    super().__init__(hidden, feature_dim=amp_feature_dim(feature_schema), num_frames=num_frames)
 
   def features(self, state: torch.Tensor, default_q: torch.Tensor) -> torch.Tensor:
     return state_features(state, default_q, self.feature_schema)
@@ -236,9 +236,12 @@ class MotionLibrary(PairMotionLibrary):
 
   def __init__(self, files: str = DEFAULT_G1_MOTIONS, device="cpu", dt: float = .02,
                train_fraction: float = .8,
-               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA):
+               feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA, num_frames: int = 2):
     if not 0 < train_fraction < 1 or dt <= 0:
       raise ValueError("invalid motion dt/split")
+    if num_frames not in (2, 4):
+      raise ValueError("AMP num_frames must be 2 or 4")
+    self.num_frames = num_frames
     amp_feature_dim(feature_schema)
     self.feature_schema = feature_schema
     directory = Path(files)
@@ -266,7 +269,7 @@ class MotionLibrary(PairMotionLibrary):
       split = int(n * train_fraction)
       if (pos.shape != (n, 3) or quat.shape != (n, 4) or joints.shape != (n, 29)
           or min(split, n - split) < 3 or not 0 < frame_dt < float("inf")
-          or min(split - 1, n - split - 1) * frame_dt <= dt
+          or min(split - 1, n - split - 1) * frame_dt <= (num_frames - 1) * dt
           or not torch.isfinite(torch.cat((pos, quat, joints), -1)).all()
           or (quat.norm(dim=-1) < 1e-6).any()):
         raise ValueError(f"invalid G1 motion {name}")
@@ -304,6 +307,25 @@ class MotionLibrary(PairMotionLibrary):
       self.metadata["feature_schema"] = feature_schema
     if feature_schema == "g1_amp_70_feet_v1":
       self.metadata["kinematics"] = KINEMATICS_METADATA.copy()
+    # Keep historical two-frame metadata byte-for-byte compatible. RSI and the
+    # independent pair metric still use sample_times' original two-frame span.
+    if num_frames != 2:
+      self.metadata["num_frames"] = num_frames
+      self.metadata["sequence_span_s"] = (num_frames - 1) * dt
+
+  def sample_sequences(self, batch: int, train: bool = True) -> torch.Tensor:
+    """All frames and interpolation supports remain in one clip and split."""
+    clips = torch.multinomial(self.weights, batch, replacement=True)
+    frame_dt, split, size = self.durations[clips], self.splits[clips], self.sizes[clips]
+    low = torch.zeros_like(frame_dt) if train else split * frame_dt
+    high = ((split - 1) if train else (size - 1)) * frame_dt - (
+      self.num_frames - 1) * self.dt
+    times = low + torch.rand(batch, device=self.device) * (high - low)
+    times = times[:, None] + torch.arange(
+      self.num_frames, device=self.device)[None] * self.dt
+    ids = clips[:, None].expand(-1, self.num_frames)
+    frames = self.at_time(ids.flatten(), times.flatten()).reshape(batch, self.num_frames, -1)
+    return frame_features(frames, self.feature_schema)
 
   def sample_pairs(self, batch: int, train: bool = True,
                    feature_schema: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:

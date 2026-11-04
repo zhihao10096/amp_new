@@ -92,6 +92,7 @@ class Go2VelocityEnvCfg(ManagerBasedRLEnvCfg):
   amp_motion_files: str = ""
   amp_reference_reset_fraction: float = .5
   amp_weight: float = .5
+  amp_num_frames: int = 2
   decimation = 4
   episode_length_s = 20.0
   sim = sim_utils.SimulationCfg(
