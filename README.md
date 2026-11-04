@@ -57,6 +57,13 @@ G1是29维动作、480维策略历史、83维世界模型状态和8维足端计�
 世界模型/判别器的可微想象更新，四网络/四优化器均保存恢复，全程禁PPO。
 正式验收预先记录于[G1_CONVERGENCE.md](G1_CONVERGENCE.md)，当前实验配置和所选
 并行数见STATUS；接口或短跑通过不等于行走收敛。
+
+G1可选AMP特征由`--amp-feature-schema`指定：默认`g1_amp_61_v1`保留旧接口；
+`g1_amp_64_velocity_v1`增加机体系根线速度，`g1_amp_70_feet_v1`再增加左右足端相对骨盆
+的六维位置（单位米）。70维在专家、PhysX和想象中统一从绝对关节角经本项目USD正运动学
+计算，不读取WM的自由足端通道，不改变任务奖励或WM状态；几何schema/资产SHA256随
+checkpoint metadata保存，恢复自动继承特征schema。新增特征目前用于单变量诊断，
+不代表G1已收敛。原生验证可传`tests/check_g1_isaaclab.py --amp-feature-schema g1_amp_70_feet_v1`。
 判别器`--amp-update-interval N`按预热后的全局迭代计数，默认1，CLI恢复自动继承；
 显式`--amp-lr`会覆盖保存的D优化器学习率。G1第二轮按上游[Issue 28](https://github.com/zitongbai/legged_lab/issues/28)
 减慢D更新以缓解饱和；实际配置和独立结果仍以STATUS/G1_CONVERGENCE为准。

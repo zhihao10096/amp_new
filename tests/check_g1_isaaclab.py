@@ -11,6 +11,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", default="logs/amp_g1/integration.json")
 parser.add_argument("--compile", action="store_true")
+parser.add_argument("--amp-feature-schema", default="g1_amp_61_v1")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 launcher = AppLauncher(args)
@@ -35,12 +36,14 @@ try:
   cfg.task.commands.resampling_time = (.12, .18)
   cfg.episode_length_s = .8
   cfg.amp_reference_reset_fraction = .5
+  cfg.amp_feature_schema = args.amp_feature_schema
   env = gym.make("G1-AMP-Flat", cfg=cfg).unwrapped
   assert type(env).step is ManagerBasedRLEnv.step
   assert type(env)._reset_idx is ManagerBasedRLEnv._reset_idx
   assert env.robot.joint_names == env.amp_motion.joint_names
   assert env.robot.num_joints == 29
-  disc = g1.AMPDiscriminator((32, 16)).to(env.device).requires_grad_(False)
+  disc = g1.AMPDiscriminator(
+    (32, 16), args.amp_feature_schema).to(env.device).requires_grad_(False)
   disc.norm.update(torch.cat(env.amp_motion.sample_pairs(1024)))
   env.amp_discriminator = disc
   obs, _ = env.reset(seed=42)
@@ -56,9 +59,13 @@ try:
   env.sim.forward()
   env.scene.update(env.step_dt)
   state = robot_state(env)
-  expert_error = (g1.state_features(state, env.consts.default_q)
-                   - g1.frame_features(frames)).abs().max().item()
+  expert_error = (g1.state_features(state, env.consts.default_q, args.amp_feature_schema)
+                   - g1.frame_features(frames, args.amp_feature_schema)).abs().max().item()
   assert expert_error < 1e-4, expert_error
+  native_feet = state[:, g1.FOOT_POS].reshape(-1, 2, 3)
+  fk_error = (g1.foot_positions(state[:, g1.Q] + env.consts.default_q)
+              - native_feet).abs().max().item()
+  assert fk_error < 1e-4, fk_error
   obs, _ = env.reset()
   resets = falls = resamples = timeouts = 0
   real_td_max_error = 0.
@@ -145,6 +152,8 @@ try:
   torch.testing.assert_close(gradients[0], gradients[1], atol=2e-5, rtol=2e-5)
   assert torch.isfinite(gradients[0]).all() and gradients[0].abs().sum() > 0
   result = {"passed": True, "robot_kind": "g1", "resets": resets, "falls": falls,
+            "amp_feature_schema": args.amp_feature_schema,
+            "native_foot_position_max_error_m": fk_error,
             "timeouts": timeouts, "real_td_max_error": real_td_max_error,
             "command_resamples": resamples, "expert_feature_max_error": expert_error,
             "compile": args.compile, "return_max_error": (returned[0]-returned[1]).abs().max().item(),

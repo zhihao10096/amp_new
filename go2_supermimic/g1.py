@@ -17,6 +17,8 @@ import torch
 from go2_supermimic import velocity as quad
 from go2_supermimic.amp import AMPDiscriminator as PairDiscriminator
 from go2_supermimic.amp import MotionLibrary as PairMotionLibrary
+from go2_supermimic.g1_kinematics import (
+  KINEMATICS_METADATA, LEG_INDICES, LEG_NAMES, foot_positions)
 
 NUM_JOINTS, NUM_FEET = 29, 2
 STATE_DIM, GAIT_DIM, AMP_DIM = 83, 8, 61
@@ -24,6 +26,7 @@ DEFAULT_AMP_FEATURE_SCHEMA = "g1_amp_61_v1"
 AMP_FEATURE_DIMS = {
   DEFAULT_AMP_FEATURE_SCHEMA: 61,
   "g1_amp_64_velocity_v1": 64,
+  "g1_amp_70_feet_v1": 70,
 }
 
 def amp_feature_dim(feature_schema: str = DEFAULT_AMP_FEATURE_SCHEMA) -> int:
@@ -193,6 +196,11 @@ def state_features(s: torch.Tensor, default_q: torch.Tensor,
     return base
   if feature_schema == "g1_amp_64_velocity_v1":
     return torch.cat((s[..., V_B], base), -1)
+  if feature_schema == "g1_amp_70_feet_v1":
+    # Use the same USD FK for expert, physical and imagined states. This does
+    # not replace the learned foot channels used by the world model/rewards.
+    feet = foot_positions(s[..., Q] + default_q).flatten(-2)
+    return torch.cat((s[..., V_B], base, feet), -1)
   amp_feature_dim(feature_schema)
   raise AssertionError("unreachable feature schema")
 
@@ -206,6 +214,9 @@ def frame_features(f: torch.Tensor,
     return base
   if feature_schema == "g1_amp_64_velocity_v1":
     return torch.cat((quat_inverse_apply(q, f[..., 36:39]), base), -1)
+  if feature_schema == "g1_amp_70_feet_v1":
+    feet = foot_positions(f[..., 7:36]).flatten(-2)
+    return torch.cat((quat_inverse_apply(q, f[..., 36:39]), base, feet), -1)
   amp_feature_dim(feature_schema)
   raise AssertionError("unreachable feature schema")
 
@@ -233,6 +244,11 @@ class MotionLibrary(PairMotionLibrary):
     directory = Path(files)
     manifest = json.loads((directory / "manifest.json").read_text())
     self.joint_names = manifest["joint_names"]
+    if feature_schema == "g1_amp_70_feet_v1":
+      for indices, name in zip(LEG_INDICES, LEG_NAMES):
+        if [self.joint_names[i] for i in indices] != [
+            f"left_{name}_joint", f"right_{name}_joint"]:
+          raise ValueError("G1 foot kinematics requires the bundled Lab joint order")
     self.device, self.dt = device, dt
     frames, sizes, splits, durations, weights, metadata = [], [], [], [], [], []
     for item in manifest["motions"]:
@@ -286,6 +302,8 @@ class MotionLibrary(PairMotionLibrary):
     if feature_schema != DEFAULT_AMP_FEATURE_SCHEMA:
       self.metadata["schema"] = feature_schema
       self.metadata["feature_schema"] = feature_schema
+    if feature_schema == "g1_amp_70_feet_v1":
+      self.metadata["kinematics"] = KINEMATICS_METADATA.copy()
 
   def sample_pairs(self, batch: int, train: bool = True,
                    feature_schema: str | None = None) -> tuple[torch.Tensor, torch.Tensor]:
