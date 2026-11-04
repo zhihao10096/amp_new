@@ -198,3 +198,27 @@
 - 四帧AMP特征验证全部通过：CPU68、参考训练段几何/梯度、原生接口/终止/命令/reset、编译返回/actor梯度、四网四优化器20→25/CLI schema/四帧恢复、61/64维旧模型metadata与D加载、A1回归；证据logs/amp_g1/history4_validation.audit.json。短跑不算收敛；下一步先提交实现，再启动同源1000轮诊断。
 
 - 2026-11-04T10:23:12 四帧完整验证全部结束并通过：CPU68、默认两帧逐位兼容、原生/想象GPU编译、四网四优化器20→25、CLI自动继承schema/四帧、旧61/64维metadata/D加载及A1 GPU回归，history4_validation.audit.json。25轮随机接口模型七指令803摔，只验证评估可运行，不是步态收益；下一步提交实现后，同9000来源/70维/18432env/1000轮单变量诊断，保留全部原标准。思路文档doc/G1_AMP_TEMPORAL_HISTORY_2026-11-04.md已更新，旧STATUS已快照。
+
+- 2026-11-04T10:23:48 实现提交5f8c17e；四帧同源1000轮诊断启动driver PID2823523（g1_amp_warm9000_feet70_history4_diag.pipeline.json），同9000/70维/18432env及全部学习批次，配置仅run_name/amp_num_frames变化，七份动作Git/SHA256由driver训练前逐一核验。将顺序保存model_0/1000并独立七指令评估；不降标准、不宣称收敛、不启动X1。
+
+- 70维四帧同源诊断启动g1_amp_warm9000_feet70_history4_diag，driver PID2823523、child PID2823690；命令/配置/日志见logs/amp_g1/g1_amp_warm9000_feet70_history4_diag.pipeline.json，仅单变量诊断，不是正式成功来源，勿重复启动。
+
+- 2026-11-04T10:25:16 四帧model_0匹配审计通过：actor/WM等于9000来源，actor/critic/WM等于70维两帧model_0，四优化器初始状态为空；logs/amp_g1/g1_amp_warm9000_feet70_history4_diag.initial_audit.json。目录logs/supermimic/2026-11-04_10-24-56_796290_g1_amp_warm9000_feet70_history4_diag，仍仅诊断，等待完整训练/独立评估。
+
+- 2026-11-04T10:26:34 四帧训练等待期间仅只读核对上游AmpVelocityCommand：其用command_counter==0识别reset，并从同一参考帧取机体系速度对齐命令、平移限幅，回合中间保持随机重采样；不能用episode_length_buf，因为该值在command reset后清零。此为四帧结果后独立候选，尚未修改当前命令/RSI或启动另一实验；先核对本机Lab2.1 reset顺序和实际reset遥测。依据reference/legged_lab/.../amp/mdp/commands/velocity_command.py:47。
+
+- 2026-11-04T10:27:57 新适配问题定位（只读，未改当前实验）：上游G1按command_counter==0识别reset，但本机Lab2.1的_resample先+1再回调，实际reset看见1，直接照搬会失效；事件reset在command reset之前，可保存同参考帧pending命令一次性消费，固定命令优先。思路及源码依据doc/G1_AMP_REFERENCE_COMMAND_ALIGNMENT_2026-11-04.md；待四帧结果后单独决定实现。
+
+- 2026-11-04T10:29:06 四帧训练已进入完整actor反传（至少600/1000），观测峰值23122MiB/GPU97%；18432及原学习批次当前可容纳。最新model_0已匹配审计，model_1000/独立步态仍待完成，不用训练falls推断验收。
+
+- 70维四帧同源诊断结束g1_amp_warm9000_feet70_history4_diag，日志logs/amp_g1/g1_amp_warm9000_feet70_history4_diag.log；必须继续检查模型/独立报告，不以退出码或D分数代替成功。
+
+- 70维四帧同源诊断启动g1_amp_warm9000_feet70_history4_diag_assessment，driver PID2823523、child PID2829046；命令/配置/日志见logs/amp_g1/g1_amp_warm9000_feet70_history4_diag.pipeline.json，仅单变量诊断，不是正式成功来源，勿重复启动。
+
+- 2026-11-04T10:31:29 四帧1000轮训练已完成，保存model_0/1000，四网/优化器与同源审计通过（更新{"actor": 500, "critic": 8400, "world_model": 4000, "amp": 280}）；目录logs/supermimic/2026-11-04_10-24-56_796290_g1_amp_warm9000_feet70_history4_diag。独立model_0/1000七指令评估由原driver2823523继续，child2829046，不重复启动。两帧70维冻结D探针已完成：正常专家style=.84355、静止零速度=.84244，时序反转=.84268；不能将D分数当步态证据。现对四帧最终D做同一CPU探针，日志同前缀temporal_probe，不影响原评估。
+
+- 70维四帧同源诊断结束g1_amp_warm9000_feet70_history4_diag_assessment，日志logs/amp_g1/g1_amp_warm9000_feet70_history4_diag_assessment.log；必须继续检查模型/独立报告，不以退出码或D分数代替成功。
+
+- 70维四帧同源1000轮及model_0/1000独立七指令步态评估全部结束，报告logs/amp_g1/g1_amp_warm9000_feet70_history4_diag_assessment.json；下一步对照同源两帧70维和无AMP的步频/摆动/离地/足滑及速度，只有真实步态收益才延长。G1尚未宣布成功。
+
+- 2026-11-04T10:33:32 四帧1000轮及model_0/1000独立评估已全部结束、原三PID退出/GPU空闲：七组零摔；vx=.56589/.94685、步频3.70456/3.89226Hz、摆动.08454/.09259s、离地6.12/12.36mm；左移vy=.09336。风格改善30.03%/26.95%，D专家/静止style=.89448/.89191，仍未解决步态，不延长。四网/来源审计通过，峰值23122MiB/97%；完整结果与失败边界doc/G1_AMP_TEMPORAL_HISTORY_2026-11-04.md。下一默认关闭的RSI命令对齐单变量（两帧70维、同9000）尚未实现/启动；本机reset计数差异已排查，不重复四帧队列。

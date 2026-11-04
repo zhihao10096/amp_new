@@ -1,5 +1,7 @@
 # G1 AMP 四帧时序信息：问题分析与验证思路
 
+当前结论（2026-11-04 10:33）：实现和GPU验证通过；1000轮匹配试验七指令零摔倒，但碎步/摆动/离地未达标，停止原配置延长。默认仍为两帧，G1未成功。
+
 ## 当前问题与依据
 
 四臂无AMP/61/64/70维同源1000轮均未达到G1 walk标准。加入根线速度及足端位置后，风格改善仍未转化为足够摆动时间/离地高度；当前两帧判别器仅覆盖20ms，上游G1配置使用四帧。时序信息不足是待验证假设，不是已证实根因。既有结论见docs/experiments/G1_AMP_WARM9000_COMPARISON_2026-11-04.md。
@@ -19,16 +21,41 @@
 
 ## 当前状态与证据
 
-四帧可选实现与全部验证已完成，准备提交后启动匹配1000轮诊断。源码起点af59616；最新70维两帧model_1000及9000来源见STATUS.md。GitHub核对保存logs/amp_g1/github_amp_temporal_history_2026-11-04.json；实际进程及配置随后实时更新STATUS/PROGRESS。最终G1全套验收不变，X1未开始。
+四帧可选实现已提交5f8c17e，1000轮诊断/独立评估已完成；未通过步态标准，见最终结果。源码起点af59616；最新70维两帧model_1000及9000来源见STATUS.md。GitHub核对保存logs/amp_g1/github_amp_temporal_history_2026-11-04.json；实际进程及配置随后实时更新STATUS/PROGRESS。最终G1全套验收不变，X1未开始。
 
 实现进展：已完成13份源码/测试接口修改。专家四帧通过独立时间采样保留完整插值支撑，sample_frames和sample_pairs保持原分布；ring仅临时重建2个过去状态。首轮CPU发现默认真实TD调用兼容和多任务编译测试缓存问题，已修正后重跑。GitHub远端连接超时，改本地主机成功读取MimicKit源，证据github_amp_temporal_history_local_2026-11-04.json；其历史新→旧顺序与本实现旧→新不同，专家/策略本地统一旧→新即可，不移植算法。
 
 CPU完整68项通过；已启动GPU顺序验证（原生编译→20/25实际更新恢复→A1回归→独立步态），driver与产物见STATUS及history4_validation.pipeline.json；尚未启动1000轮。
 
-默认两帧相对af59616的D单次loss/更新、回放采样、G1想象回报及actor梯度逐位一致（history4_default2_compatibility.json）。四帧CPU68和原生GPU/想象编译/四网20→25已通过；A1和独立步态由原driver继续。回放四帧要求过去2个状态仍在ring内，逻辑索引0/1不用于AMP/想象种子；128长度下排除2/128起点，物理采集与WM采样不变，这是与旧两帧诊断比较的窗口可用性限制。
+默认两帧相对af59616的D单次loss/更新、回放采样、G1想象回报及actor梯度逐位一致（history4_default2_compatibility.json）。四帧CPU68和原生GPU/想象编译/四网20→25已通过；A1和独立步态均已完成。回放四帧要求过去2个状态仍在ring内，逻辑索引0/1不用于AMP/想象种子；128长度下排除2/128起点，物理采集与WM采样不变，这是与旧两帧诊断比较的窗口可用性限制。
 
 ## 实现验证完成
 
-CPU68项、默认两帧逐位兼容、真实GPU原生/想象编译、四网四优化器20→25、CLI无显式参数自动继承四帧/schema、61/64维旧模型和A1 GPU回归均通过，审计logs/amp_g1/history4_validation.audit.json。原生65reset/13摔倒终止/52超时/356命令切换；编译回报max1.79e-7，actor梯度max2.91e-11。
+CPU68项（66项Git跟踪+2项既有未跟踪exploration）、默认两帧逐位兼容、真实GPU原生/想象编译、四网四优化器20→25、CLI无显式参数自动继承四帧/schema、61/64维旧模型和A1 GPU回归均通过，审计logs/amp_g1/history4_validation.audit.json。原生65reset/13摔倒终止/52超时/356命令切换；编译回报max1.79e-7，actor梯度max2.91e-11。
 
 25轮随机短跑模型独立七指令共803次摔倒，风格距3.4829/3.4801；这只是检查评估接口可运行，不能当作步态改善或收敛。匹配1000轮仍从已确定的G1速度9000继承actor/WM，重建critic/D/优化器，保持原18432env和学习批次，不从随机25轮继续。实现提交后再启动；七份参考数据不变，训练前重新核对Git/SHA256。
+
+实现提交5f8c17e；1000轮诊断已启动driver2823523，状态logs/amp_g1/g1_amp_warm9000_feet70_history4_diag.pipeline.json。最终结果以下方model_0/1000独立评估为准，不以训练D分数判断。
+
+1000轮训练已结束并保存四网模型/通过来源与优化器审计，g1_amp_warm9000_feet70_history4_diag.audit.json；独立评估已完成，见下方结果。两帧冻结D正常专家和静止特征几乎同分（.84355/.84244），报告logs/amp_g1/g1_amp_feet70_history2_temporal_probe.json；只检验特征敏感性，不代表真实控制。
+
+## 1000轮独立结果与决定
+
+原driver2823523/训练2823690/评估2829046均已退出，pipeline complete。model_0/1000各七指令×8env×20s、seed42，1000轮七组零摔。
+
+| 指令vx | 实际vx m/s | 每足步频 Hz | 摆动 s | 离地 mm | 接触足滑 m/s |
+|---|---:|---:|---:|---:|---:|
+| 0.60000 | 0.56589 | 3.70456 | 0.08454 | 6.11983 | 0.07337 |
+| 1.00000 | 0.94685 | 3.89226 | 0.09259 | 12.35899 | 0.17637 |
+
+每足步频仍超过2.5Hz、摆动不足.15s、离地不足15mm；左侧移vy=.09336（指令.3），侧移RMSE=.24115，未达.18阈值。与两帧70维1000轮相比，前进/快走离地7.13/14.18mm→6.12/12.36mm、步频3.533/3.800→3.705/3.892Hz；没有足够物理步态收益，不按原配置延长。
+
+独立相邻帧风格距forward 6.58430→4.60683（改善30.03%）、fast 9.56222→6.98507（26.95%）；同为70维同一指标，可核对相对变化，但风格改善不能替代步态。冻结D探针四帧正常专家style=.89448、静止零速度=.89191、逆序=.89205；两帧自身为.84355/.84244/.84268。各D的绝对值不可直接相互校准比较；各自对静止/逆序区别均小，说明增加到60ms没有消除该现象，不能据此断言D只看姿态。每帧score梯度非零也不能证明闭环能学会步态。
+
+训练四网更新500/8400/4000/280、优化器/初值审计通过；18432env峰值23122MiB、观测GPU峰值97%，完整actor更新无OOM。CPU68包含66项Git跟踪测试及既有2项未跟踪exploration测试；这些探索文件保留原状未提交。
+
+证据位于logs/amp_g1：g1_amp_warm9000_feet70_history4_diag.pipeline.json、.audit.json、_assessment.json、g1_amp_feet70_history2_temporal_probe.json、g1_amp_feet70_history4_temporal_probe.json；探针脚本probe_temporal_amp.py只读训练split。最终模型logs/supermimic/2026-11-04_10-24-56_796290_g1_amp_warm9000_feet70_history4_diag/model_1000.pt，保留model_0。
+
+结论：四帧实现/兼容/恢复已验证并提交5f8c17e，四帧训练未解决G1 walk。保持默认两帧，不把四帧负结果提升为正式成功；下一独立方向为RSI命令对齐（方案doc/G1_AMP_REFERENCE_COMMAND_ALIGNMENT_2026-11-04.md），从同9000起点和两帧70维预算对照，不叠加四帧。参考筛选/辅助奖励后续分开检验，最终G1验收不变，X1未开始。
+
+锁定步态验收器g1_gait_failures复核明确拒绝本模型，具体失败项保存在logs/amp_g1/g1_amp_warm9000_feet70_history4_diag_failures.json；不是凭视觉或训练指标判定。
