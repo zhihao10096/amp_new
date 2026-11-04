@@ -28,6 +28,8 @@ try:
   from go2_supermimic.supermimic.train import Actor, Critic
   from go2_supermimic.supermimic.world_model import WorldModel
   from isaaclab.envs import ManagerBasedRLEnv
+  from isaaclab.actuators import ImplicitActuator
+  from isaaclab.utils.types import ArticulationActions
 
   torch.set_float32_matmul_precision("highest")
   cfg = G1AmpEnvCfg()
@@ -44,6 +46,36 @@ try:
   assert type(env)._reset_idx is ManagerBasedRLEnv._reset_idx
   assert env.robot.joint_names == env.amp_motion.joint_names
   assert env.robot.num_joints == 29
+  assert all(type(motor) is ImplicitActuator for motor in env.robot.actuators.values())
+  # Explicit DC drives write zero Kp/Kd into PhysX. These must be real PD drives.
+  stiffness = env.robot.root_physx_view.get_dof_stiffnesses().to(env.device)
+  damping = env.robot.root_physx_view.get_dof_dampings().to(env.device)
+  torch.testing.assert_close(stiffness, env.consts.kp.expand_as(stiffness))
+  torch.testing.assert_close(damping, env.consts.kd.expand_as(damping))
+  # At equal states the differentiable reward proxy must match Lab's own
+  # implicit effort estimate, including at the former DC speed boundary.
+  motor_estimate_error = 0.
+  for fraction in (0., .5, 1., -1.):
+    probe = torch.zeros(32, g1.STATE_DIM, device=env.device)
+    probe[:, g1.QD] = fraction * env.consts.velocity
+    probe[:, g1.Q] = -.5 if fraction >= 0 else .5
+    action = torch.full((32, 29), 4. if fraction >= 0 else -4., device=env.device)
+    expected = g1.motor_torque(probe, action, env.consts, cfg.task)
+    estimate = torch.zeros_like(expected)
+    for motor in env.robot.actuators.values():
+      ids = motor.joint_indices
+      targets = ArticulationActions(
+        joint_positions=(env.consts.default_q + cfg.task.action_scale * action)[:, ids],
+        joint_velocities=torch.zeros_like(action[:, ids]),
+        joint_efforts=torch.zeros_like(action[:, ids]))
+      motor.compute(targets, (env.consts.default_q + probe[:, g1.Q])[:, ids],
+                    probe[:, g1.QD][:, ids])
+      estimate[:, ids] = motor.applied_effort
+      assert targets.joint_positions is not None
+      assert not targets.joint_efforts.any()  # PhysX receives position targets, not PD torques.
+    error = (expected - estimate).abs().max().item()
+    motor_estimate_error = max(motor_estimate_error, error)
+    torch.testing.assert_close(expected, estimate, atol=2e-5, rtol=2e-5)
   disc = g1.AMPDiscriminator(
     (32, 16), args.amp_feature_schema, args.amp_num_frames).to(env.device).requires_grad_(False)
   disc.norm.update(torch.cat(env.amp_motion.sample_pairs(1024)))
@@ -163,6 +195,9 @@ try:
   torch.testing.assert_close(gradients[0], gradients[1], atol=2e-5, rtol=2e-5)
   assert torch.isfinite(gradients[0]).all() and gradients[0].abs().sum() > 0
   result = {"passed": True, "robot_kind": "g1", "resets": resets, "falls": falls,
+            "actuator_model": g1.ACTUATOR_MODEL,
+            "implicit_effort_estimate_max_error": motor_estimate_error,
+            "physx_drive_gains_verified": True,
             "amp_feature_schema": args.amp_feature_schema,
             "amp_num_frames": args.amp_num_frames,
             "native_foot_position_max_error_m": fk_error,

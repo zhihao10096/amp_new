@@ -44,6 +44,7 @@ OBS_TERMS = (("angular_velocity", 3), ("gravity", 3), ("command", 3),
 FRAME_DIM = sum(dim for _, dim in OBS_TERMS)
 MANIFEST = Path(__file__).resolve().parents[1] / "assets/motions/g1/manifest.json"
 DEFAULT_G1_MOTIONS = str(MANIFEST.parent)
+ACTUATOR_MODEL = "g1_implicit_pd_v1"
 CommandCfg, VelocityTaskCfg, RobotConsts = quad.CommandCfg, quad.VelocityTaskCfg, quad.RobotConsts
 sample_commands, advance_commands = quad.sample_commands, quad.advance_commands
 terminated, termination_probability = quad.terminated, quad.termination_probability
@@ -56,6 +57,16 @@ class RewardWeights(quad.RewardWeights):
 
 
 REWARD_NAMES = tuple(RewardWeights.__dataclass_fields__)
+
+
+def require_implicit_pd(checkpoint: dict) -> None:
+  """Never import a world model learned with the historical G1 DC actuator."""
+  if checkpoint.get("actuator_model") != ACTUATOR_MODEL:
+    raise ValueError(
+      "G1 checkpoint actuator model is incompatible: expected "
+      f"{ACTUATOR_MODEL}, got {checkpoint.get('actuator_model', 'legacy DC PD')}. "
+      "Start a fresh G1 run; old DC dynamics cannot be resumed, warm-started "
+      "or evaluated as implicit PD.")
 
 
 def walk_task() -> VelocityTaskCfg:
@@ -106,11 +117,14 @@ def advance_gait(gait: torch.Tensor, contact0: torch.Tensor, contact1: torch.Ten
 
 def motor_torque(s: torch.Tensor, action: torch.Tensor, c: RobotConsts,
                  cfg: VelocityTaskCfg) -> torch.Tensor:
-  qd = s[:, QD]
-  torque = c.kp * (cfg.action_scale * action - s[:, Q]) - c.kd * qd
-  upper = (c.effort * (1 - qd / c.velocity)).clamp(min=0).minimum(c.effort)
-  lower = (c.effort * (-1 - qd / c.velocity)).clamp(max=0).maximum(-c.effort)
-  return torch.maximum(torch.minimum(torque, upper), lower)
+  """Differentiable estimate of implicit PD effort, with fixed torque limits.
+
+  This matches Isaac Lab's ImplicitActuator effort estimate at the same state.
+  PhysX integrates the actual PD drive implicitly; this is not its exact
+  solver torque. Damping still depends on joint speed, but the cap does not.
+  """
+  torque = c.kp * (cfg.action_scale * action - s[:, Q]) - c.kd * s[:, QD]
+  return torch.maximum(torch.minimum(torque, c.effort), -c.effort)
 
 
 def reward(s0, s1, action, previous_action, commands, c: RobotConsts,

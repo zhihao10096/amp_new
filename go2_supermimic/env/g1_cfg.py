@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import DCMotorCfg
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
 
@@ -13,11 +13,10 @@ from go2_supermimic.g1 import DEFAULT_AMP_FEATURE_SCHEMA, DEFAULT_G1_MOTIONS, wa
 G1_USD = str(Path(__file__).resolve().parents[2] / "assets/robots/g1/g1_29dof_rev_1_0.usd")
 
 
-def motor(names, effort, speed, stiffness, damping):
-  # Explicit DC PD keeps the simulator torque law identical to imagination.
-  return DCMotorCfg(
-    joint_names_expr=names, effort_limit=effort, saturation_effort=effort,
-    velocity_limit=speed, effort_limit_sim=effort, velocity_limit_sim=speed,
+def motor(names, effort, speed, stiffness, damping) -> ImplicitActuatorCfg:
+  # Preserve legged_lab's PhysX PD drives and constant effort limits.
+  return ImplicitActuatorCfg(
+    joint_names_expr=names, effort_limit_sim=effort, velocity_limit_sim=speed,
     stiffness=stiffness, damping=damping, armature=.01)
 
 

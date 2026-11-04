@@ -13,6 +13,8 @@ def evaluation_config(checkpoint, num_envs, device, observation_noise=False):
     raise ValueError(f"unsupported checkpoint task: {task}")
   cfg = A1AmpEnvCfg() if task == "A1-AMP-Flat" else Go2VelocityEnvCfg()
   if task in ("G1-AMP-Flat", "G1-Velocity-Flat"):
+    from go2_supermimic.g1 import require_implicit_pd
+    require_implicit_pd(checkpoint)
     from go2_supermimic.env.g1_cfg import G1AmpEnvCfg, G1VelocityEnvCfg
     cfg = G1AmpEnvCfg() if task == "G1-AMP-Flat" else G1VelocityEnvCfg()
   if checkpoint.get("robot_kind", "go2") != cfg.robot_kind:
@@ -34,6 +36,9 @@ def evaluation_config(checkpoint, num_envs, device, observation_noise=False):
 
 
 def attach_evaluation_amp(env, checkpoint):
+  if env.robot_kind == "g1":
+    from go2_supermimic.g1 import require_implicit_pd
+    require_implicit_pd(checkpoint)
   if "amp" not in checkpoint:
     env.amp_discriminator = None
     return

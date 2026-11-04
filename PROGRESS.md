@@ -242,3 +242,59 @@
 - 2026-11-04T10:56:23+08:00 r2补充诊断已完成/PID2840503退出。A1 1000轮D正常/冻结style=.98780/.92615，仍比G1 1000轮更敏感，但A1 D实际1400步、lr1e-4/GP10/interval1；G1 D280步、lr1e-5/GP40/interval5，不能将差异只归因特征。A1 1000同1m/s air=.1611s/净空19.79mm，而G1两帧/四帧.0913/.0926s、14.18/12.36mm。参考FK几何代理对5/10/15mm阈值和clip边界敏感，缺真实contact，未得到可信参考步频，不将代理作为训练/评估标签或根因证据。正在形成doc/A1_G1_SMALL_STEP_COMPARISON_2026-11-04.md；生产代码/训练未改。
 
 - 2026-11-04T11:00:41+08:00 A1/G1小碎步与RSI报告已写doc/A1_G1_SMALL_STEP_COMPARISON_2026-11-04.md并同步本地doc/。核验5行同1m/s真实步态、4行冻结D、实际D更新1400/280及task_cfg节奏权重/周期通过，审计logs/amp_g1/a1_g1_small_step_comparison.audit.json。结论：RSI命令冲突约55%为共有现象；G1节奏约束更弱和D运动敏感性更低是后续独立候选，均无闭环因果证明。原RSI对齐仍未实现，CPU两PID均退出且无新训练；下一步检查diff后仅提交对比报告/交接文件。
+
+- 2026-11-04T11:03:50+08:00 A1/G1小碎步对比任务完成并提交8f63846，本地/开发机报告SHA256一致，本地主机中央弹窗已确认显示。用户新增建议调整AMP奖励权重，下一阶段按amp_weight=.25/.5/1.0单变量同源诊断，.5现有完成结果作为基线，不改RSI/特征/历史/奖励；先核对driver及初值/配置一致性，再启动两个新权重实验。G1最终验收不变，RSI实现暂后移，不将权重调参视为已修复。
+
+- 2026-11-04T11:10:43+08:00 用户纠正优先级：不做AMP权重网格，先对照Go2/A1/reference/legged_lab仔细排查原因，再决定对齐实现。已核实parent/两子pipeline JSON均不存在、无计算进程，准备的权重脚本未启动；权重方案doc已明确取消。A1/G1对比完成提交8f63846及本地弹窗均已确认；本轮后续仅源码/实际checkpoint/上游公式审计，不改生产奖励或RSI、不启动训练。重点核对AMP混合/归一化/dt、奖励项/控制/reset/来源，避免把PPO可收敛等同WM路径无需验证。
+
+- 2026-11-04T11:12:22+08:00 上游系统核对定位关键实现偏差：固定legged_lab f33a189工作树干净；G1AMP配置style_reward_scale=2/task_style_lerp=.5，上游R=.5*task+1*dt*style，本项目R=task+.5*dt*style，假定同task时AMP相对任务强度少4倍。上游仅hip_yaw/roll、arms、waist偏移分组惩罚，当前对全部29DOF统一L1，额外约束hip_pitch/knee；上游G1AMP不含当前base_height、gait_duration、clearance等自定义步态项。尚在核对公式/控制/重置，不宣称已证实根因、不启动训练。未启动的权重脚本已用cancelled.json明确阻止误启动。
+
+- 2026-11-04T11:21:14+08:00 四方源码/实际checkpoint CPU审计启动PID2851914：执行隔离后的上游predict_style_reward/lerp_reward及stand_still关节门控原方法，核对Go2/A1/G1来源与实际cfg；命令/日志/输出go2_a1_g1_legged_lab_source_audit.process.json（logs/amp_g1）。用户追问PD改动原因：当前源码仅记载为真实/想象共用显式PD公式的工程选择，尚无隐式/显式同条件收益验证；继续追溯初始提交。GitHub固定commit的D/奖励配置均在线读取成功且SHA256与本地干净副本完全一致，证据github_verification.json。无生产改动或新训练。
+
+- 2026-11-04T11:28:12+08:00 用户明确禁止G1 DC模型；源码确认5c02bf2首次引入时仅为真实/想象共用公式，无隐式PD对照收益证据。决定恢复legged_lab固定限矩隐式PD，想象奖励改用同状态的PD估算，旧DC世界模型与新控制隔离并记录模型类型。已修改控制/元数据守卫，CPU与真实GPU验证待启动；不混改奖励/AMP/RSI。上轮四方CPU审计PID2851914已退出且passed，报告go2_a1_g1_legged_lab_source_audit.json；当前GPU其他项目使用，不触碰其进程。
+
+- 2026-11-04T11:30:43.135817+08:00 隐式PD完整CPU75通过；GPU验证driver PID2858666已启动，状态logs/amp_g1/implicit_pd_validation.pipeline.json。将核对原生PD驱动、编译、同PD velocity→AMP热启动、四网20→25保存恢复及A1回归；非收敛训练。
+
+- 2026-11-04T11:30:44.518658+08:00 隐式PD验证启动implicit_pd_reject_old_resume，driver PID2858666、child PID2858779；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:30:47.548538+08:00 隐式PD验证结束implicit_pd_reject_old_resume，返回码1，预期拒绝=True，证据logs/amp_g1/implicit_pd_reject_old_resume.log。
+
+- 2026-11-04T11:30:47.553505+08:00 隐式PD验证启动implicit_pd_reject_old_warm-start，driver PID2858666、child PID2858805；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:30:50.584068+08:00 隐式PD验证结束implicit_pd_reject_old_warm-start，返回码1，预期拒绝=True，证据logs/amp_g1/implicit_pd_reject_old_warm-start.log。
+
+- 2026-11-04T11:30:50.585415+08:00 隐式PD验证启动implicit_pd_integration，driver PID2858666、child PID2858852；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:31:48.144176+08:00 隐式PD验证结束implicit_pd_integration，返回码0，预期拒绝=False，证据logs/amp_g1/implicit_pd_integration.log。
+
+- 2026-11-04T11:31:48.145821+08:00 隐式PD验证启动implicit_pd_velocity_smoke，driver PID2858666、child PID2859860；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:32:30.569571+08:00 隐式PD验证结束implicit_pd_velocity_smoke，返回码0，预期拒绝=False，证据logs/amp_g1/implicit_pd_velocity_smoke.log。
+
+- 2026-11-04T11:32:30.575378+08:00 隐式PD验证启动implicit_pd_smoke_initial，driver PID2858666、child PID2860665；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:32:40.122420+08:00 用户允许IdealPD备选；当前先验证上游隐式PD，不引入第二个控制变量。原生GPU验证已passed：所有驱动为ImplicitActuator、PhysX Kp/Kd精确对应配置，Lab同状态力矩估算误差0，编译返回max1.79e-7/actor梯度max2.91e-11；65reset/11摔倒/54超时/355命令切换。后续driver继续短跑四网保存恢复/A1回归。
+
+- 2026-11-04T11:33:22.216697+08:00 隐式PD验证结束implicit_pd_smoke_initial，返回码0，预期拒绝=False，证据logs/amp_g1/implicit_pd_smoke_initial.log。
+
+- 2026-11-04T11:33:22.240634+08:00 隐式PD验证启动implicit_pd_smoke_resume，driver PID2858666、child PID2861584；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:33:46.495111+08:00 隐式PD验证结束implicit_pd_smoke_resume，返回码0，预期拒绝=False，证据logs/amp_g1/implicit_pd_smoke_resume.log。
+
+- 2026-11-04T11:33:46.502882+08:00 隐式PD验证启动implicit_pd_a1_regression，driver PID2858666、child PID2862118；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:34:06.263567+08:00 AMP站立门控CPU只读探针启动PID2862594，执行固定上游原方法与当前D；不改参数、不训练，输出logs/amp_g1/upstream_amp_command_gate_probe.json。
+
+- 2026-11-04T11:34:06.273009+08:00 AMP站立门控CPU探针结束passed：相同D score=1时本项目stand/walk原始style为0/1，上游均1；属已验证公式差异，不是闭环根因。证据upstream_amp_command_gate_probe.json。
+
+- 2026-11-04T11:34:07.756146+08:00 隐式PD验证结束implicit_pd_a1_regression，返回码0，预期拒绝=False，证据logs/amp_g1/implicit_pd_a1_regression.log。
+
+- 2026-11-04T11:34:07.757699+08:00 隐式PD验证启动implicit_pd_smoke_gait，driver PID2858666、child PID2862646；命令/配置/日志见logs/amp_g1/implicit_pd_validation.pipeline.json。仅接口验证，勿重复启动。
+
+- 2026-11-04T11:35:11.419129+08:00 隐式PD验证结束implicit_pd_smoke_gait，返回码0，预期拒绝=False，证据logs/amp_g1/implicit_pd_smoke_gait.log。
+
+- 2026-11-04T11:35:11.420126+08:00 隐式PD CPU/原生GPU/想象编译梯度/同控制velocity→AMP热启动/四网20→25/旧DC恢复拒绝/A1回归/七指令评估接口均完成。短跑不证明walk收敛。
+
+- 2026-11-04T11:37:56.012769+08:00 隐式PD验证全部完成，driver2858666退出，pipeline/audit passed；原生力矩估算误差0，四网20→25更新actor16→21/critic36→46/WM20→25/D3→4；A1真实GPU回归及最终三点审计均通过，旧DC审计新增执行器拒绝通过。model25七指令829摔，仅验证评估接口，不是收敛。无本项目GPU作业，保留其他项目约5895MiB使用。准备更新文档并提交控制修复。
+
+- 2026-11-04T11:40:18+08:00 控制修复及四方上游对照归档：全部GPU/CPU/模型恢复/A1回归和旧DC类型拒绝已验证，STATUS重写为新PD恢复入口，旧状态快照docs/history/STATUS_2026-11-04_before_implicit_pd.md。两份思路doc/G1_IMPLICIT_PD_RESTORE_2026-11-04.md及G1_AMP_UPSTREAM_AUDIT_2026-11-04.md记录实施/证据/限制；最终G1执行器审计新增类型检查。准备仅提交本轮控制及文档，保留无关改动，不启动长训；下一步上游奖励/AMP公式oracle。
