@@ -21,3 +21,7 @@
 ## 本轮验证入口
 
 CPU `logs/amp_g1/discriminator_alignment_cpu.log`；新D GPU验证及新PD冷启动状态将写入STATUS。新D不参与无AMP冷启动，其效果不能由该训练推断。
+
+## 结合AMP的预设入口
+
+后续会做同机器人速度冷启动→AMP。稳定移动但碎步尚差的模型可以用于诊断AMP，由AMP改善风格；无需进入AMP前已达到最终风格。诊断入口：七组20s×8严格fall为0、高度≥.65m，forward/fast vx RMSE≤.25m/s并且非零步频。匹配的无AMP对照同样继承actor/WM、重建critic/优化器；AMP另建D。其他未通过的物理指标保留，不声称正式成功。最终G1 AMP三点、全速度/步态、加噪、录像和审计门槛不变。
