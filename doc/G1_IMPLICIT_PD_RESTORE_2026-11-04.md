@@ -28,3 +28,11 @@
 - 新PD model25七指令评估829摔，留出风格距3.7483/3.7296；这是随机短跑的接口测试，**不能证明行走或碎步改善**。最新模型`logs/supermimic/2026-11-04_11-33-30_972624_g1_implicit_pd_smoke_resume/model_25.pt`。
 
 本轮32env用于接口验证，不据此判断18432env容量或训练效率。验证期间有其他项目冻结评估占用约5.9GiB，未终止或干预，pipeline采样的整卡显存不等同本项目净占用。尚未启动新收敛训练；修复接口不代表收敛。上游奖励/AMP组合/关节集合/RSI差异见`doc/G1_AMP_UPSTREAM_AUDIT_2026-11-04.md`；先对齐和验证，再建立新PD训练基线，最终G1/X1标准保持。
+
+## IdealPD候选复核与当前训练
+
+2026-11-04T12:49:47+08:00：已按用户补充核对本机Isaac Lab 2.1 `actuators/actuator_pd.py` 和 `actuator_base.py`，IdealPD实际实现为 `clip(Kp*(q_target-q)+Kd*(qd_target-qd)+tau_ff, -limit, limit)`，没有DC的速度相关限矩。隐式PD由PhysX在仿真中积分，IdealPD在每个物理子步显式求力矩；后者应作为不同动力学验证，官方也指出较大仿真步长下隐式PD通常更准确。目前没有证据说明隐式PD不好，因此先完成同上游控制的既有基线，避免在训练中改动力学。若后续证据支持IdealPD对照，保持Kp/Kd、动作映射及固定力矩上限一致，检查实际驱动参数、CPU/真实GPU/想象梯度及保存恢复；新执行器使用独立类型标记和新世界模型，不直接续用隐式PD世界模型。
+
+当前基线源码20ad0d3，唯一driver2915722，正式run `logs/supermimic/2026-11-04_12-45-04_890456_g1_aligned_formal_r1`，18432env，控制`g1_implicit_pd_v1`、state84、AMP61四帧、RSI对齐开启。完整更新profiling选择18432（约50820真实转移/s、峰值23208MiB），该原队列已完成0/1000七指令和1000完整速度评估，1000点未通过稳定行走；四网更新/随机来源审计通过。最终结果见`logs/amp_g1/aligned_baseline_r1.pipeline.json`与`doc/G1_ALIGNED_BASELINE_2026-11-04.md`。本次复核只读源码和维护文档，没有修改仿真或新增训练。
+
+2026-11-04T12:56:59+08:00：基线队列已complete且退出，结果不能证明隐式PD有问题。尚未实现/启动IdealPD对照，不把备选方案表述为已验证修复。

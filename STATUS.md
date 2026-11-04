@@ -1,57 +1,53 @@
 # 当前状态与恢复入口
 
-核实时间：2026-11-04T12:38:18+08:00。权威目录`/pfs/user/learning/amp_new`；SSH `ssh -p 9205 root@118.196.87.69`。先读GOAL/PLAN/本文件并核对HEAD、PID、GPU和产物，不重复启动实验。旧状态快照`docs/history/STATUS_2026-11-04_before_rsi_alignment.md`。
+核实时间：2026-11-04T12:55:53+08:00。权威目录 `/pfs/user/learning/amp_new`；SSH `ssh -p 9205 root@118.196.87.69`。
+恢复先读 GOAL/PLAN/本文件，再核实 HEAD、pipeline、PID 和 GPU，避免重复启动。
 
-## 当前代码、范围与决定
+## 版本、范围和决定
 
-- 当前HEAD eee92bbc9b6fdbbbea5dc9e6d82b09133b18cdbe；RSI/严格评估/四帧审计修复已全部验证，待单独提交，之后更新准确HEAD。奖励对齐29b1875，隐式PD f32755e。
-- Manager/A1已独立完成；G1仅29DOF平地walk、SuperMimic世界模型/可微想象、禁PPO；成功后才做X1下半身12DOF，跳过RKNN，其他部署参考reference/AMP。总目标未完成。
-- G1执行器g1_implicit_pd_v1（固定限矩，无DC转速降额；IdealPD仅备选），state_schema=g1_state84_base_contact_v1（WM84/critic125、actor480）；旧DC与旧83维WM禁止训练复用，旧隐式PDactor仍可评估。
-- reward_profile=g1_legged_lab_walk_v1的16项及最终R=.5*task+dt*style已对齐，站立style开启。训练终止height<.2或torso/pelvis接触；独立评估同时保留height<.5或60°倾角越界计数，报告必须有fall_definition=native_or_height05_tilt60_v1。零fall/速度/步态/风格门槛保持。
-- RSI amp_reset_command_alignment默认False，只有G1 AMP可开；同帧速度裁剪到walk命令范围，一次性pending适配Lab2.1，无counter猜测；普通/回合中随机、fixed优先、评估关闭。下一个新基线显式启用，CLI/checkpoint记录。
-- 七份G1参考动作在assets/motions/g1由Git追踪，来源/SHA256/split保留，本轮复核通过。A1/G1新增动作仍须提交，X1动作按GOAL复制后忽略。
+- 当前 HEAD `20ad0d3a2490b0c2771b6c8d0b8748674832e0cf`；训练受测源码 `20ad0d3a2490b0c2771b6c8d0b8748674832e0cf`，23份源码SHA256一致。控制f32755e、奖励29b1875、终止eee92bb、RSI/严格评估/四帧审计20ad0d3。
+- Manager/A1已独立完成；G1仅29DOF/平地/walk，SuperMimic世界模型与可微想象，禁PPO。G1成功后才做X1下半身12DOF，跳过RKNN，部署参考reference/AMP；总目标未完成。
+- 控制 `g1_implicit_pd_v1`，固定限矩88/139/25/5Nm，无DC转速降额；用户允许IdealPD备选，已核对其显式PD/固定限矩源码。当前无隐式PD故障证据，保持与legged_lab一致；切换执行器须独立类型/新WM谱系，不直接续用旧动力学。
+- state `g1_state84_base_contact_v1`（WM84/critic125/actor480）；旧DC/83维WM禁止训练复用，旧隐式PD actor可独立评估。reward `g1_legged_lab_walk_v1`，16项及最终R=.5task+dtstyle。
+- 训练height<.2/torso或pelvis接触终止；独立评估保留height<.5/tilt>60°，`fall_definition=native_or_height05_tilt60_v1`。严格越界采样可连续累计，不等于独立摔倒回合数。
+- G1七份动作 `assets/motions/g1/` Git/SHA256复核7/7通过。A1/G1实际动作须由项目Git管理，X1复制后按GOAL忽略。
 
-## 当前进程与配置
+## 唯一队列、运行目录和配置
 
-- 暂无本项目训练/验证进程。RSI driver2907230及所有子进程退出，logs/amp_g1/rsi_alignment_validation.pipeline.json为complete，audit为passed，不重启。终止driver2896882和上游奖励driver2883115也均完成。
-- 本轮仅32env接口短跑：velocity8轮→AMP20轮→CLI续到25轮（开关True）→显式关闭续到30。WM64×2、actor/critic64,32、WM/imag batch32/H4、buffer32/window4、collect2；D64,32/batch64/interval5/lr1e-5→2e-5/GP40；61维四帧，FP32编译。实际命令/日志/run/config/PID见pipeline各jobs。
-- 下一已确定阶段：完整actor profiling 16384/18432，18432峰值有余量才试20480，必要时12288回退；学习批次固定WM4096×4/window8、imag8192/H32、critic3×4、buffer128/collect1。只用有有效完整更新checkpoint且无OOM/PhysX错误的吞吐选择规模。
-- 随后另起全新随机G1 AMP1000轮（不继承profile/旧模型）；61维四帧、RSI.5/对齐True、既有探索.3/actor_lr_scale.15、D512,256/2048×2/lr1e-5/GP40/interval5/最终混合.5，WM预热300/critic200/actor_ramp500/AMP_ramp1000，FP32编译。先独立0/1000七指令及1000完整速度，再决定后续，不开网格。
+- 队列 `logs/amp_g1/aligned_baseline_r1.pipeline.json`，driver `2915722`，阶段 `complete`，active PID `None`；driver和训练/评估子进程均已核对退出，GPU0%/1MiB，无当前作业。勿重复启动。
+- 正式run `logs/supermimic/2026-11-04_12-45-04_890456_g1_aligned_formal_r1`；配置同目录 `config.json`；训练日志 `logs/amp_g1/aligned_formal_r1.log`；评估日志/完整命令/PID见pipeline.jobs。
+- profiling16384/18432完整反传通过：约46307/50820真实转移/s、峰值22196/23208MiB；选四网更新且无OOM/PhysX错误的18432。按余量跳过20480，不代表已OOM。汇总 `logs/amp_g1/aligned_performance_summary.json`。
+- 正式18432env/随机seed0/model0→1000，不继承profile权重；WM512×3/batch4096×4/window8，actor/critic512,256,128，imag8192/H32，critic3×4，buffer128/collect1，FP32最高精度/编译。
+- AMP61维四帧，D512,256/2048×2/lr1e-5/GP40/interval5/AMP ramp1000；RSI.5/同帧命令对齐True，评估关闭。OU.3/25%+Gaussian.1，actor_lr_scale.15；WM预热300/critic200/actor ramp500。
 
-## 最新与最佳checkpoint
+## 最新/最佳模型和评估
 
-- 最新接口模型（显式关闭）：logs/supermimic/2026-11-04_12-33-11_262546_g1_rsi_alignment_smoke_disabled/model_30.pt，仅30轮，不是行走候选。
-- 已启用RSI的25轮接口模型：logs/supermimic/2026-11-04_12-32-46_954366_g1_rsi_alignment_smoke_resume/model_25.pt；初始20轮logs/supermimic/2026-11-04_12-32-19_648885_g1_rsi_alignment_smoke_initial/model_20.pt。
-- 新PD/84维/上游奖励下无已验收最佳或已收敛G1模型。历史DC9000稳定移动来源与70维四帧1000负结果保留在旧STATUS快照，不能导入新PD世界模型。
-- 已完成阶段checkpoints/go2_manager_converged.pt、checkpoints/a1_amp_converged.pt，无需重训。
+- 最新 `logs/supermimic/2026-11-04_12-45-04_890456_g1_aligned_formal_r1/model_1000.pt`，初始同目录 `model_0.pt`。新PD下无已验收最佳/收敛G1模型；profile/接口模型不是行走候选。
+- 1000训练正常退出，actor/critic/WM/D更新500/8400/4000/280，四网/优化器有限且参数变化，随机来源审计通过，峰值23374MiB；1000总迭代包含500轮预热，actor仅更新500次。证据 `logs/amp_g1/aligned_formal_r1_update_audit.json`。
+- 独立七指令20s×8env共24项失败：0.6/1m/s每足步频0/.013Hz、腾空0/.085s，vx RMSE1.387/1.440；严格fall/越界采样608/614。风格距4.204→2.648、4.210→2.634（约37%改善），仍未学会稳定行走。原始 `logs/amp_g1/aligned_formal_r1_gait0_1000.json`。
+- 完整速度30s/96env/12固定+3随机已完成，单点passed=False：速度30项失败、步态24项失败；固定整体RMSE(vx/vy/yaw)=1.293/.533/.613，三随机vx RMSE1.281–1.300。完整速度输出 `logs/amp_g1/aligned_formal_r1_velocity1000.json`；单点结论 `logs/amp_g1/aligned_formal_r1_assessment1000.json`，以pipeline阶段为准。不能代替三连续点、加噪、录像和最终审计。
+- 已完成接口回归：CPU92、原生GPU/编译梯度、四网保存恢复、RSI/严格评估/四帧metadata、旧DC/schema拒绝及A1三点审计passed，见 `logs/amp_g1/rsi_alignment_validation.audit.json`。本轮仅文档变更，不重跑GPU训练。
+- 已完成模型 `checkpoints/go2_manager_converged.pt`、`checkpoints/a1_amp_converged.pt` 保留，无需重训。
 
-## 最近证据与指标
+## 已排除方向、未解决问题和下一步
 
-- CPU92通过，logs/amp_g1/rsi_alignment_cpu.log；同帧真实GPU59参考/70普通reset，最大速度/命令误差4.17e-7，编译返回5.96e-8/梯度3.73e-9，默认关闭/旧profile/fixed/定时/历史/终止均通过。
-- 四网/优化器20→25→30：actor16→21→26、critic36→46→56、WM20→25→30、D3→4→5，CLI自动继承和显式关闭均正确；rsi_alignment_validation.audit.json。
-- 随机25轮七指令严格越界/终止采样6258，风格距4.18055/4.20943；只证明接口，不能证明walk收敛。短速度报告2s/settle0，只是接口，不能当完整30s验收。
-- A1原生GPU回归及实际三checkpoint完整审计仍converged；旧G1 DC/schema负例按预期拒绝。rsi_alignment_convergence_audit_regression.json。
-- 终止原生1851次oracle一致、CPU88通过；奖励16项原函数oracle最大项9.76e-13、task1.95e-14。历史证据对应contact_termination/upstream_reward_validation.audit.json。
+- 历史增加OU/节流D/真实TD/MPC/补动态拟合/61→64→70/四帧未通过walk；旧Go2课程使G1移动但碎步。历史DC9000不能导入新PD WM。严重骨架错配/RSI穿透无证据支持；A1/G1随机命令冲突约55%是共有现象。
+- RSI本机counter1/2差异、默认关闭/同帧命令、严格评估及四帧审计均已修复。接口通过不证明训练收益，1000早期点失败也不证明隐式PD是根因。
+- 仍需区分仅500次actor更新与稳定性/WM梯度问题；先读完整速度/checkpoint报告，再决定有证据的单变量验证，不开权重网格或盲切IdealPD。
+- 已知差异：端点力矩/控制周期加速度与接触计时代理、yaw-rate而非heading、混合RSI、D512/256 LeakyReLU及统一decay（上游1024/512 ELU/输出decay.1）；尚无独立因果结论。
+- 历史已归档 `docs/history/PROGRESS_2026-11-04_before_aligned_result.md`、`docs/history/STATUS_2026-11-04_before_aligned_result.md`；本轮思路/结果 `doc/G1_ALIGNED_BASELINE_2026-11-04.md`，PD候选 `doc/G1_IMPLICIT_PD_RESTORE_2026-11-04.md`，正式标准 `G1_CONVERGENCE.md` 不变。
 
-## 已排除方向与未解决问题
-
-- 历史增加OU/节流D/真实TD/MPC/补动态拟合/61→64→70/四帧均未通过最终walk；Go2课程使旧G1稳定移动但仍碎步，不原样加码。严重骨架错配/RSI穿透未获支持，A1/G1随机命令冲突55%是共有现象。
-- 本机counter原方法确认reset1/timed2，上游counter0不能直搬；已用pending修复接口，尚无训练收益结论。
-- 代理力矩/加速度与原生末子步量存在差异，接触计时有控制周期量化与想象松弛；直接yaw-rate不同于上游heading控制，RSI.5保持混合；不能称完整原生MDP等价。
-- 本项目D仍512/256 LeakyReLU和统一decay1e-4，上游1024/512 ELU及输出decay.1；下一基线先检验已修复的控制/奖励/终止/RSI组合，不叠加D变量。若仍失败再按收益/证据排序。
-- 新控制大规模完整更新容量尚未测；历史18432约23GiB、24576完整更新OOM/32768PhysX错误，不能以预热吞吐/32env短跑证明容量。
-- G1三连续点、最终噪声、录像/人工检查/完整审计未完成；X1未开始。
-
-## 文档与下一条命令
-
-思路/限制/证据：doc/G1_RSI_COMMAND_ALIGNMENT_2026-11-04.md、G1_TERMINATION_ALIGNMENT_2026-11-04.md；正式门槛G1_CONVERGENCE.md不变。
+下一条命令：
 
 ```bash
 cd /pfs/user/learning/amp_new
 git rev-parse HEAD
-git status --short
+cat logs/amp_g1/aligned_baseline_r1.pipeline.json
+cat logs/amp_g1/aligned_formal_r1_assessment1000.json
+ps -p 2915722,2927150 -o pid,ppid,etime,stat,args
 nvidia-smi
-cat logs/amp_g1/rsi_alignment_validation.audit.json
 ```
 
-下一执行：提交已验证RSI/严格评估/四帧审计，然后启动唯一aligned_baseline_r1.pipeline.py队列（先确认pipeline.json不存在且无同名进程）；该队列顺序profiling→新随机1000训练→独立评估，禁止重复启动。
+下一阶段先读 `logs/amp_g1/aligned_formal_r1_assessment1000.json`，审计仅500次actor更新与实际策略/WM响应，再决定训练时长或IdealPD单变量对照；尚未启动。
+
+- 2026-11-04T12:56:59+08:00 原队列已于2026-11-04T12:54:17.660648+08:00完成并退出，GPU0%/1MiB；1000单点passed=False，步态失败24项、速度失败30项。固定整体RMSE(vx/vy/yaw)=1.293/0.533/0.613，三随机种子vx RMSE1.281–1.300；没有已验收G1最佳模型，X1未开始。本轮未修改训练源码或启动额外实验，IdealPD仍为允许的独立候选，不能将当前失败归因于隐式PD。
